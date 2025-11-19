@@ -10,18 +10,38 @@ import {
   HelpCircle,
   ChevronsRight,
   ChevronDown,
+  ClipboardCheck,
+  MessageSquare,
+  UserPlus,
+  BarChart3,
+  ClipboardList,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export const sidebarLinks = [
+export type SidebarLink = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+};
+
+export const primaryLinks: SidebarLink[] = [
   { label: "Dashboard", href: "/", icon: Home },
   { label: "Clubs", href: "/clubs", icon: Building2 },
   { label: "Events", href: "/events", icon: CalendarDays },
-  { label: "Officers", href: "/officers", icon: Users },
-  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
-const secondaryLinks = [
+export const manageLinks: SidebarLink[] = [
+  { label: "Add Members", href: "/members/add", icon: UserPlus },
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Forms", href: "/forms", icon: ClipboardList },
+  { label: "Tasks", href: "/tasks", icon: ClipboardCheck },
+  { label: "Messaging", href: "/messaging", icon: MessageSquare },
+  { label: "Officers", href: "/officers", icon: Users },
+];
+
+const accountLinks: SidebarLink[] = [
+  { label: "Settings", href: "/settings", icon: Settings },
   { label: "Support", href: "/settings", icon: HelpCircle },
   { label: "Logout", href: "/login", icon: LogOut },
 ];
@@ -33,12 +53,11 @@ interface SidebarProps {
 function Sidebar({ className }: SidebarProps) {
   const location = useLocation();
   const [open, setOpen] = useState(true);
-  const [selected, setSelected] = useState(sidebarLinks[0].label);
+  const [selected, setSelected] = useState(primaryLinks[0].label);
 
   useEffect(() => {
-    const active =
-      sidebarLinks.find((link) => link.href === location.pathname)?.label ??
-      sidebarLinks[0].label;
+    const allLinks = [...primaryLinks, ...manageLinks, ...accountLinks];
+    const active = allLinks.find((link) => link.href === location.pathname)?.label ?? primaryLinks[0].label;
     setSelected(active);
   }, [location.pathname]);
 
@@ -52,8 +71,8 @@ function Sidebar({ className }: SidebarProps) {
       >
         <TitleSection open={open} />
 
-        <div className="mb-8 space-y-1">
-          {sidebarLinks.map((link) => (
+        <div className="mb-4 space-y-1">
+          {primaryLinks.map((link) => (
             <Option
               key={link.href}
               Icon={link.icon}
@@ -66,24 +85,50 @@ function Sidebar({ className }: SidebarProps) {
           ))}
         </div>
 
-        {open && (
-          <div className="space-y-1 border-t border-gray-200 pt-4 dark:border-gray-800">
-            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Account
+        <div className="space-y-5 border-t border-gray-200 pt-4 dark:border-gray-800">
+          <div>
+            {open && (
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Manage
+              </div>
+            )}
+            <div className="space-y-1">
+              {manageLinks.map((link) => (
+                <Option
+                  key={link.href}
+                  Icon={link.icon}
+                  title={link.label}
+                  href={link.href}
+                  open={open}
+                  isSelected={selected === link.label}
+                  onSelect={() => setSelected(link.label)}
+                />
+              ))}
             </div>
-            {secondaryLinks.map((link) => (
-              <Option
-                key={link.href}
-                Icon={link.icon}
-                title={link.label}
-                href={link.href}
-                open={open}
-                isSelected={selected === link.label}
-                onSelect={() => setSelected(link.label)}
-              />
-            ))}
           </div>
-        )}
+
+          <div>
+            {!open && <div className="mx-2 border-t border-gray-200 dark:border-gray-800" />}
+            {open && (
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Account
+              </div>
+            )}
+            <div className="space-y-1">
+              {accountLinks.map((link) => (
+                <Option
+                  key={link.href}
+                  Icon={link.icon}
+                  title={link.label}
+                  href={link.href}
+                  open={open}
+                  isSelected={selected === link.label}
+                  onSelect={() => setSelected(link.label)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
 
         <ToggleClose open={open} setOpen={setOpen} />
       </nav>
@@ -121,16 +166,16 @@ const Option = ({
     <div className="grid h-full w-12 place-content-center">
       <Icon className="h-4 w-4" />
     </div>
-    {open && (
+    <div className="flex flex-1 min-w-0 items-center">
       <span
         className={cn(
-          "text-sm font-medium transition-opacity duration-200",
-          open ? "opacity-100" : "opacity-0",
+          "text-sm font-medium whitespace-nowrap transition-opacity duration-200",
+          open ? "opacity-100" : "opacity-0 pointer-events-none",
         )}
       >
         {title}
       </span>
-    )}
+    </div>
   </NavLink>
 );
 
@@ -145,9 +190,11 @@ const TitleSection = ({ open }: { open: boolean }) => {
               <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                 Connect Camp
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Admin Workspace
-              </p>
+              {open && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  Admin Workspace
+                </p>
+              )}
             </div>
           )}
         </div>

@@ -12,7 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { sidebarLinks } from "./Sidebar";
+import { primaryLinks, manageLinks } from "./Sidebar";
+import type { SidebarLink } from "./Sidebar";
 import { useAuth } from "@/context/AuthContext";
 
 const pageDescriptions: Record<string, string> = {
@@ -29,8 +30,9 @@ function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const pathname = location.pathname;
+  const allLinks = [...primaryLinks, ...manageLinks];
   const activePage =
-    sidebarLinks.find((link) => link.href === pathname)?.label ??
+    allLinks.find((link) => link.href === pathname)?.label ??
     (pathname === "/login" ? "Login" : "Dashboard");
 
   const description =
@@ -72,7 +74,7 @@ function Topbar() {
                   <p className="text-sm text-muted-foreground">Quick navigation</p>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {sidebarLinks.map(({ label, href, icon: Icon }) => (
+                  {[...primaryLinks, ...manageLinks].map(({ label, href, icon: Icon }: SidebarLink) => (
                     <NavLink
                       key={href}
                       to={href}

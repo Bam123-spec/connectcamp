@@ -58,6 +58,13 @@ type PendingItem = {
   type: string;
 };
 
+type TrendPoint = {
+  date: string;
+  dateLabel: string;
+  members: number;
+  clubs: number;
+};
+
 const memberTrendConfig: ChartConfig = {
   members: {
     label: "Members",
@@ -75,6 +82,14 @@ function Dashboard() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const dateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+      }),
+    [],
+  );
 
   useEffect(() => {
     let active = true;
@@ -149,27 +164,23 @@ function Dashboard() {
     return [...pendingClubs, ...pendingEvents].slice(0, 4);
   }, [clubs, events]);
 
-  const trendData = useMemo(() => {
+  const trendData = useMemo<TrendPoint[]>(() => {
     if (!clubs.length) return [];
 
     const grouped = new Map<
       string,
-      { dateLabel: string; members: number; clubs: number; timestamp: number }
+      { date: Date; members: number; clubs: number }
     >();
 
     clubs.forEach((club) => {
-      const created = club.created_at ? new Date(club.created_at) : null;
-      const key = created ? created.toISOString().split("T")[0] : `unknown-${club.id}`;
-      const dateLabel = created
-        ? created.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-        : "Pending";
+      const created = club.created_at ? new Date(club.created_at) : new Date();
+      const key = created.toISOString().split("T")[0];
       const entry =
         grouped.get(key) ??
         {
-          dateLabel,
+          date: created,
           members: 0,
           clubs: 0,
-          timestamp: created?.getTime() ?? Date.now(),
         };
 
       entry.members += club.member_count ?? 0;
@@ -177,15 +188,42 @@ function Dashboard() {
       grouped.set(key, entry);
     });
 
-    return Array.from(grouped.values()).sort((a, b) => a.timestamp - b.timestamp);
-  }, [clubs]);
+    const sorted = Array.from(grouped.values()).sort(
+      (a, b) => a.date.getTime() - b.date.getTime(),
+    );
+
+    let runningMembers = 0;
+    let runningClubs = 0;
+
+    return sorted.map((entry) => {
+      runningMembers += entry.members;
+      runningClubs += entry.clubs;
+
+      return {
+        date: entry.date.toISOString(),
+        dateLabel: dateFormatter.format(entry.date),
+        members: runningMembers,
+        clubs: runningClubs,
+      };
+    });
+  }, [clubs, dateFormatter]);
 
   const chartData =
     trendData.length > 0
       ? trendData
       : [
-          { dateLabel: "Week 1", members: 0, clubs: 0, timestamp: 1 },
-          { dateLabel: "Week 2", members: 0, clubs: 0, timestamp: 2 },
+          {
+            date: new Date().toISOString(),
+            dateLabel: "Week 1",
+            members: 0,
+            clubs: 0,
+          },
+          {
+            date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            dateLabel: "Week 2",
+            members: 0,
+            clubs: 0,
+          },
         ];
 
   const eventsByDay = useMemo(() => {
@@ -275,11 +313,21 @@ function Dashboard() {
                 <ReLineChart data={chartData} margin={{ left: 12, right: 24, top: 20, bottom: 12 }}>
                   <CartesianGrid strokeDasharray="4 4" stroke="hsl(var(--muted-foreground) / 0.25)" />
                   <XAxis
-                    dataKey="dateLabel"
+                    dataKey="date"
                     tickLine={false}
                     axisLine={false}
                     tickMargin={8}
                     minTickGap={24}
+                    tickFormatter={(value: string) => {
+                      const match = chartData.find((point) => point.date === value);
+                      if (match) {
+                        return match.dateLabel;
+                      }
+                      const parsed = new Date(value);
+                      return Number.isNaN(parsed.getTime())
+                        ? value
+                        : dateFormatter.format(parsed);
+                    }}
                   />
                   <YAxis
                     tickLine={false}
@@ -287,7 +335,23 @@ function Dashboard() {
                     width={60}
                     tickFormatter={(value) => value.toLocaleString()}
                   />
-                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        indicator="line"
+                        labelFormatter={(value, payload) => {
+                          const withLabel = payload?.[0]?.payload as TrendPoint | undefined;
+                          if (withLabel?.dateLabel) {
+                            return withLabel.dateLabel;
+                          }
+                          const parsed = new Date(String(value));
+                          return Number.isNaN(parsed.getTime())
+                            ? value
+                            : dateFormatter.format(parsed);
+                        }}
+                      />
+                    }
+                  />
                   <Line
                     type="monotone"
                     dataKey="members"
