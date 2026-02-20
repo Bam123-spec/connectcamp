@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import Dashboard from "./pages/Dashboard";
+
 import Login from "./pages/Login";
 import Clubs from "./pages/Clubs";
 import Events from "./pages/Events";
 import CreateEvent from "./pages/CreateEvent";
+import Dashboard from "./pages/Dashboard";
+import ManageClubsPage from "./pages/ManageClubsPage";
 import Tasks from "./pages/Tasks";
 import Messaging from "./pages/Messaging";
 import Officers from "./pages/Officers";
@@ -15,15 +18,18 @@ import { cn } from "@/lib/utils";
 import AddMembers from "./pages/AddMembers";
 import { Toaster } from "@/components/ui/toaster";
 import Analytics from "./pages/Analytics";
-import FormsHome from "./forms/FormsHome";
-import CreateForm from "./forms/CreateForm";
-import FormDetail from "./forms/FormDetail";
-import FormSubmissions from "./forms/FormSubmissions";
-import PublicFormFill from "./forms/PublicFormFill";
+import ScrollToTop from "./components/ScrollToTop";
+import FormsListPage from "./pages/forms/FormsListPage";
+import FormEditorPage from "./pages/forms/FormEditorPage";
+import FormResponsesPage from "./pages/forms/FormResponsesPage";
+import PublicFormPage from "./pages/public/PublicFormPage";
+import UserManagement from "./pages/UserManagement";
+import PendingApprovals from "./pages/PendingApprovals";
 
 function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AppLayout />
       <Toaster />
     </BrowserRouter>
@@ -33,6 +39,7 @@ function App() {
 function AppLayout() {
   const location = useLocation();
   const isLoginRoute = location.pathname === "/login";
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
     <div
@@ -41,14 +48,26 @@ function AppLayout() {
         isLoginRoute ? "flex-col" : "flex-col md:flex-row",
       )}
     >
-      {!isLoginRoute && <Sidebar />}
+      {!isLoginRoute && (
+        <Sidebar
+          open={sidebarOpen}
+          setOpen={setSidebarOpen}
+          className="fixed left-0 top-0 z-20 h-screen overflow-y-auto border-r bg-background"
+        />
+      )}
 
-      <div className="flex-1">
+      <div
+        className={cn(
+          "flex-1 transition-all duration-300 ease-in-out",
+          !isLoginRoute && (sidebarOpen ? "md:pl-64" : "md:pl-16"),
+        )}
+      >
         {!isLoginRoute && <Topbar />}
         <main
           className={cn(
-            "px-4 pb-10 pt-4 sm:px-6 lg:px-8",
-            isLoginRoute && "flex min-h-screen items-center justify-center bg-background px-4",
+            "h-[calc(100vh-4rem)] overflow-y-auto px-4 pb-10 pt-4 sm:px-6 lg:px-8",
+            isLoginRoute &&
+            "flex min-h-screen items-center justify-center bg-background px-4",
           )}
         >
           <Routes>
@@ -66,6 +85,14 @@ function AppLayout() {
               element={
                 <ProtectedRoute>
                   <Clubs />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/clubs/manage"
+              element={
+                <ProtectedRoute>
+                  <ManageClubsPage />
                 </ProtectedRoute>
               }
             />
@@ -97,7 +124,7 @@ function AppLayout() {
               path="/forms"
               element={
                 <ProtectedRoute>
-                  <FormsHome />
+                  <FormsListPage />
                 </ProtectedRoute>
               }
             />
@@ -105,27 +132,27 @@ function AppLayout() {
               path="/forms/create"
               element={
                 <ProtectedRoute>
-                  <CreateForm />
+                  <FormEditorPage />
                 </ProtectedRoute>
               }
             />
             <Route
-              path="/forms/:formId"
+              path="/forms/:formId/edit"
               element={
                 <ProtectedRoute>
-                  <FormDetail />
+                  <FormEditorPage />
                 </ProtectedRoute>
               }
             />
             <Route
-              path="/forms/:formId/submissions"
+              path="/forms/:formId/responses"
               element={
                 <ProtectedRoute>
-                  <FormSubmissions />
+                  <FormResponsesPage />
                 </ProtectedRoute>
               }
             />
-            <Route path="/form-fill/:formId" element={<PublicFormFill />} />
+            <Route path="/form-fill/:formId" element={<PublicFormPage />} />
             <Route
               path="/events/create"
               element={
@@ -163,6 +190,22 @@ function AppLayout() {
               element={
                 <ProtectedRoute>
                   <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <ProtectedRoute>
+                  <UserManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/approvals"
+              element={
+                <ProtectedRoute>
+                  <PendingApprovals />
                 </ProtectedRoute>
               }
             />

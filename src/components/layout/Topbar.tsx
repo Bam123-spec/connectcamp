@@ -32,7 +32,10 @@ function Topbar() {
   const pathname = location.pathname;
   const allLinks = [...primaryLinks, ...manageLinks];
   const activePage =
-    allLinks.find((link) => link.href === pathname)?.label ??
+    allLinks.find((link) => {
+      if (link.href === "/") return pathname === "/";
+      return pathname.startsWith(link.href);
+    })?.label ??
     (pathname === "/login" ? "Login" : "Dashboard");
 
   const description =

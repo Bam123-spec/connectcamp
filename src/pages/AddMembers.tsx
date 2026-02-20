@@ -10,8 +10,9 @@ type ClubOption = {
   name: string;
 };
 
-const ROLE_OPTIONS = ["President", "Vice President", "Treasurer", "Secretary"] as const;
+const ROLE_OPTIONS = ["president", "vice_president", "treasurer", "secretary"] as const;
 type OfficerRole = (typeof ROLE_OPTIONS)[number];
+const displayRole = (role: OfficerRole) => role.replace("_", " ").replace(/^\w/, (char) => char.toUpperCase());
 
 type BulkRow = {
   email: string;
@@ -95,18 +96,17 @@ function AddMembers() {
     return data.user?.id ?? null;
   }, []);
 
-  const addMemberRecord = useCallback(async (clubId: string, email: string) => {
+  const addMemberRecord = useCallback(async (clubId: string, userId: string | null) => {
     const { error } = await supabase
       .from("club_members")
       .upsert(
         [
           {
             club_id: clubId,
-            email,
-            role: "student",
+            user_id: userId,
           },
         ],
-        { onConflict: "club_id,email", ignoreDuplicates: true },
+        { onConflict: "club_id,user_id", ignoreDuplicates: true },
       );
 
     if (error) {
@@ -114,38 +114,71 @@ function AddMembers() {
     }
   }, []);
 
-  const assignOfficer = useCallback(async (clubId: string, email: string, role: OfficerRole) => {
-    const { error } = await supabase
-      .from("officers")
-      .upsert(
-        [
-          { club_id: clubId, email, role },
-        ],
-        { onConflict: "club_id,email" },
-      );
-
-    if (error) {
-      throw new Error(error.message ?? "Unable to save officer record");
+  const findProfileByEmail = useCallback(async (email: string) => {
+    const { data, error } = await supabase.from("profiles").select("id").eq("email", email).single();
+    if (error || !data) {
+      throw new Error("User with this email doesn’t exist.");
     }
+    return data.id as string;
   }, []);
 
   const addMemberFlow = useCallback(
     async (email: string, clubId: string) => {
       const normalized = email.trim().toLowerCase();
       await ensureAuthUser(normalized);
-      await addMemberRecord(clubId, normalized);
+      let userId: string | null = null;
+      try {
+        userId = await findProfileByEmail(normalized);
+      } catch {
+        userId = null;
+      }
+      await addMemberRecord(clubId, userId);
     },
-    [addMemberRecord, ensureAuthUser],
+    [addMemberRecord, ensureAuthUser, findProfileByEmail],
+  );
+
+  const insertOfficer = useCallback(
+    async (userId: string, clubId: string, email: string, role: OfficerRole) => {
+      // Enforce a single officer record per user per club; block if one already exists for this club.
+      const { data: existingRows } = await supabase
+        .from("officers")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("club_id", clubId)
+        .limit(1);
+
+      if (existingRows && existingRows.length > 0) {
+        throw new Error("Can't add user: this account is already an officer for this club.");
+      }
+
+      // No existing record; insert new.
+      const payloadWithEmail = { user_id: userId, club_id: clubId, role, email };
+      const payloadWithoutEmail = { user_id: userId, club_id: clubId, role };
+
+      const withEmail = await supabase.from("officers").insert(payloadWithEmail);
+      if (!withEmail.error) return;
+
+      const message = withEmail.error.message?.toLowerCase() ?? "";
+      const columnMissing = message.includes("column") && message.includes("email");
+      if (columnMissing) {
+        const withoutEmail = await supabase.from("officers").insert(payloadWithoutEmail);
+        if (withoutEmail.error) throw new Error(withoutEmail.error.message ?? "Unable to add officer.");
+        return;
+      }
+
+      throw new Error(withEmail.error.message ?? "Unable to add officer.");
+    },
+    [],
   );
 
   const addOfficerFlow = useCallback(
     async (email: string, clubId: string, role: OfficerRole) => {
       const normalized = email.trim().toLowerCase();
-      await ensureAuthUser(normalized);
-      await assignOfficer(clubId, normalized, role);
-      await addMemberRecord(clubId, normalized);
+      const profileId = await findProfileByEmail(normalized);
+      await insertOfficer(profileId, clubId, normalized, role);
+      await addMemberRecord(clubId, profileId);
     },
-    [addMemberRecord, assignOfficer, ensureAuthUser],
+    [addMemberRecord, findProfileByEmail, insertOfficer],
   );
 
   const handleAddMember = async (event: FormEvent<HTMLFormElement>) => {
@@ -187,7 +220,7 @@ function AddMembers() {
       await addOfficerFlow(officerEmail, officerClubId, officerRole);
       toast({
         title: "Officer added",
-        description: `${officerEmail.trim()} is now a ${officerRole}.`,
+        description: `${officerEmail.trim()} is now ${displayRole(officerRole)}.`,
       });
       setOfficerEmail("");
       setOfficerClubId("");
@@ -417,7 +450,7 @@ function AddMembers() {
                     <option value="">Choose a role</option>
                     {ROLE_OPTIONS.map((role) => (
                       <option key={role} value={role}>
-                        {role}
+                        {displayRole(role)}
                       </option>
                     ))}
                   </select>

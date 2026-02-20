@@ -1,176 +1,193 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { Plus } from "lucide-react";
+import {
+  getAllTasks,
+  createTask,
+  updateTask,
+  deleteTask,
+  toggleTaskCompletion,
+  type Task,
+  type CreateTaskPayload,
+} from "@/lib/tasksApi";
+import { TaskCard } from "@/components/tasks/TaskCard";
+import { TaskDialog } from "@/components/tasks/TaskDialog";
+import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type Task = {
-  id: string;
-  title: string;
-  description: string;
-  status: string;
-  created_at: string;
-};
-
-const statusOptions = ["Pending", "In progress", "Completed"];
-
-function Tasks() {
+export default function Tasks() {
+  const { toast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState("Pending");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   useEffect(() => {
-    let active = true;
-
-    const fetchTasks = async () => {
-      setLoading(true);
-      const { data, error } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
-
-      if (!active) return;
-
-      if (error) {
-        setError(error.message);
-      } else {
-        setTasks(data ?? []);
-        setError(null);
-      }
-
-      setLoading(false);
-    };
-
-    fetchTasks();
-
-    return () => {
-      active = false;
-    };
+    loadTasks();
   }, []);
 
-  const refreshTasks = async () => {
-    const { data } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
-    setTasks(data ?? []);
-  };
-
-  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!title.trim()) return;
-    setSaving(true);
-
-    const { error } = await supabase.from("tasks").insert({
-      title,
-      description,
-      status,
-    });
-
-    setSaving(false);
-
-    if (error) {
-      setError(error.message);
-      return;
+  const loadTasks = async () => {
+    try {
+      setLoading(true);
+      const data = await getAllTasks();
+      setTasks(data);
+    } catch (error) {
+      console.error("Failed to load tasks:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load tasks. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-
-    setTitle("");
-    setDescription("");
-    setStatus("Pending");
-    setShowForm(false);
-    await refreshTasks();
   };
 
-  const badgeClass = (state: string) => {
-    if (state === "Completed") return "bg-green-600 text-white border-transparent";
-    if (state === "In progress") return "bg-amber-200 text-amber-900 border-transparent";
-    return "border border-border text-foreground";
+  const handleCreateTask = async (payload: CreateTaskPayload) => {
+    try {
+      const newTask = await createTask(payload);
+      setTasks((prev) => [...prev, newTask]);
+      toast({
+        title: "Task created",
+        description: "New task has been added successfully.",
+      });
+    } catch (error) {
+      console.error("Failed to create task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create task.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleUpdateTask = async (payload: CreateTaskPayload) => {
+    if (!editingTask) return;
+    try {
+      const updated = await updateTask(editingTask.id, payload);
+      setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      toast({
+        title: "Task updated",
+        description: "Task details have been updated.",
+      });
+    } catch (error) {
+      console.error("Failed to update task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update task.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleDeleteTask = async (task: Task) => {
+    if (!confirm("Are you sure you want to delete this task?")) return;
+    try {
+      await deleteTask(task.id);
+      setTasks((prev) => prev.filter((t) => t.id !== task.id));
+      toast({
+        title: "Task deleted",
+        description: "Task has been removed.",
+      });
+    } catch (error) {
+      console.error("Failed to delete task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete task.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleToggleCompletion = async (task: Task) => {
+    try {
+      // Optimistic update
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, is_completed: !t.is_completed } : t))
+      );
+
+      await toggleTaskCompletion(task.id, !task.is_completed);
+    } catch (error) {
+      console.error("Failed to toggle completion:", error);
+      // Revert on error
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, is_completed: task.is_completed } : t))
+      );
+      toast({
+        title: "Error",
+        description: "Failed to update task status.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openCreateDialog = () => {
+    setEditingTask(null);
+    setDialogOpen(true);
+  };
+
+  const openEditDialog = (task: Task) => {
+    setEditingTask(task);
+    setDialogOpen(true);
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Tasks</h2>
-          <p className="text-sm text-muted-foreground">
-            Upcoming responsibilities for the Connect Camp admins.
+    <div className="space-y-6 p-6 max-w-5xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Tasks</h1>
+          <p className="text-sm text-gray-500">
+            Manage and track responsibilities for your team.
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowForm((value) => !value)}>
-          {showForm ? "Cancel" : "Create task"}
+        <Button onClick={openCreateDialog} className="gap-2">
+          <Plus className="h-4 w-4" />
+          Add Task
         </Button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleCreate} className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm">
-          {error && (
-            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Task title</label>
-            <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Review submissions" />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Description</label>
-            <Textarea
-              rows={3}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="Explain what needs to happen and any context for other admins."
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Status</label>
-            <select
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-            >
-              {statusOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex justify-end">
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Save task"}
-            </Button>
-          </div>
-        </form>
-      )}
-
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <Skeleton key={index} className="h-24 rounded-xl" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-xl" />
           ))}
+        </div>
+      ) : tasks.length === 0 ? (
+        <div className="flex h-[400px] flex-col items-center justify-center rounded-xl border border-dashed bg-gray-50/50 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+            <Plus className="h-6 w-6 text-gray-400" />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-gray-900">No tasks yet</h3>
+          <p className="mt-2 text-sm text-gray-500 max-w-sm">
+            Get started by creating a new task to track your team's progress.
+          </p>
+          <Button onClick={openCreateDialog} variant="outline" className="mt-6">
+            Create your first task
+          </Button>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {tasks.map((task) => (
-            <div key={task.id} className="rounded-xl border bg-card p-4 shadow-sm">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-semibold">{task.title}</p>
-                  <p className="text-sm text-muted-foreground">{task.description}</p>
-                </div>
-                <Badge className={badgeClass(task.status)}>{task.status}</Badge>
-              </div>
-            </div>
+            <TaskCard
+              key={task.id}
+              task={task}
+              onEdit={openEditDialog}
+              onDelete={handleDeleteTask}
+              onToggleCompletion={handleToggleCompletion}
+            />
           ))}
-          {!tasks.length && (
-            <p className="text-sm text-muted-foreground">No tasks yet. Click “Create task” to add one.</p>
-          )}
         </div>
       )}
+
+      <TaskDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSubmit={editingTask ? handleUpdateTask : handleCreateTask}
+        initialData={editingTask}
+        mode={editingTask ? "edit" : "create"}
+      />
     </div>
   );
 }
-
-export default Tasks;

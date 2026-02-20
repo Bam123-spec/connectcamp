@@ -7,6 +7,13 @@ import { useRealtimeMembers } from "@/hooks/useRealtimeMembers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ImageUpload } from "@/components/ImageUpload";
+import { TimePicker } from "@/components/ui/time-picker";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { format, parse, isValid } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -32,16 +39,13 @@ type Club = {
 type CreateClubForm = {
   name: string;
   description: string;
-  day: string;
   time: string;
   location: string;
 };
 
-const CLUB_LOGO_BUCKET = "club-logos";
 const initialCreateClubState: CreateClubForm = {
   name: "",
   description: "",
-  day: "",
   time: "",
   location: "",
 };
@@ -51,11 +55,13 @@ function Clubs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  const [createSheetOpen, setCreateSheetOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateClubForm>(initialCreateClubState);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [date, setDate] = useState<Date | undefined>(undefined);
+  const [logoUrl, setLogoUrl] = useState<string>("");
   const [createError, setCreateError] = useState<string | null>(null);
-  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [editingClub, setEditingClub] = useState<Club | null>(null);
 
   const fetchClubs = useCallback(async () => {
     setLoading(true);
@@ -75,35 +81,45 @@ function Clubs() {
     fetchClubs();
   }, [fetchClubs]);
 
-  const resetCreateClubForm = () => {
+  const resetForm = () => {
     setCreateForm(initialCreateClubState);
-    setLogoFile(null);
+    setDate(undefined);
+    setLogoUrl("");
     setCreateError(null);
+    setEditingClub(null);
   };
 
-  const uploadClubLogo = async () => {
-    if (!logoFile) return null;
-
-    const extension = logoFile.name.split(".").pop() ?? "png";
-    const uniqueId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Date.now().toString();
-    const baseName = logoFile.name.replace(/\.[^/.]+$/, "");
-    const sanitized = baseName.replace(/\s+/g, "-").toLowerCase();
-    const path = `logos/${uniqueId}-${sanitized}.${extension}`;
-
-    const { error: uploadError } = await supabase.storage.from(CLUB_LOGO_BUCKET).upload(path, logoFile, {
-      cacheControl: "3600",
-      upsert: false,
+  const handleEditClub = (club: Club) => {
+    setEditingClub(club);
+    setCreateForm({
+      name: club.name,
+      description: club.description || "",
+      time: club.time || "",
+      location: club.location || "",
     });
 
-    if (uploadError) {
-      throw new Error(uploadError.message ?? "Unable to upload club logo.");
+    if (club.day) {
+      // Assuming day is stored as YYYY-MM-DD
+      try {
+        const parsedDate = parse(club.day, "yyyy-MM-dd", new Date());
+        if (isValid(parsedDate)) {
+          setDate(parsedDate);
+        } else {
+          setDate(undefined);
+        }
+      } catch (e) {
+        console.error("Failed to parse date", e);
+        setDate(undefined);
+      }
+    } else {
+      setDate(undefined);
     }
 
-    const { data } = supabase.storage.from(CLUB_LOGO_BUCKET).getPublicUrl(path);
-    return data?.publicUrl ?? null;
+    setLogoUrl(club.cover_image_url || "");
+    setSheetOpen(true);
   };
 
-  const handleCreateClub = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setCreateError(null);
 
@@ -112,41 +128,52 @@ function Clubs() {
       return;
     }
 
-    setCreateSubmitting(true);
+    setSubmitting(true);
     try {
-      const logoUrl = await uploadClubLogo();
       const payload = {
         name: createForm.name.trim(),
         description: createForm.description.trim() || null,
-        day: createForm.day.trim() || null,
+        day: date ? format(date, "yyyy-MM-dd") : null,
         time: createForm.time.trim() || null,
         location: createForm.location.trim() || null,
-        cover_image_url: logoUrl,
-        created_at: new Date().toISOString(),
+        cover_image_url: logoUrl || null,
       };
 
-      const { error: insertError } = await supabase.from("clubs").insert([payload]);
+      let error;
 
-      if (insertError) {
-        throw new Error(insertError.message ?? "Unable to create club.");
+      if (editingClub) {
+        const { error: updateError } = await supabase
+          .from("clubs")
+          .update({ ...payload })
+          .eq("id", editingClub.id);
+        error = updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from("clubs")
+          .insert([{ ...payload, created_at: new Date().toISOString() }]);
+        error = insertError;
+      }
+
+      if (error) {
+        throw new Error(error.message ?? `Unable to ${editingClub ? "update" : "create"} club.`);
       }
 
       toast({
-        title: "Club created",
-        description: `${payload.name} has been added.`,
+        title: `Club ${editingClub ? "updated" : "created"}`,
+        description: `${payload.name} has been ${editingClub ? "updated" : "added"}.`,
       });
-      resetCreateClubForm();
-      setCreateSheetOpen(false);
+      resetForm();
+      setSheetOpen(false);
       await fetchClubs();
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : "Unable to create club.";
+      const message = caughtError instanceof Error ? caughtError.message : `Unable to ${editingClub ? "update" : "create"} club.`;
       setCreateError(message);
       toast({
-        title: "Unable to create club",
+        title: `Unable to ${editingClub ? "update" : "create"} club`,
         description: message,
       });
     } finally {
-      setCreateSubmitting(false);
+      setSubmitting(false);
     }
   };
 
@@ -172,7 +199,7 @@ function Clubs() {
     return (
       <div className="grid gap-4 md:grid-cols-2">
         {clubs.map((club) => (
-          <ClubCard key={club.id} club={club} />
+          <ClubCard key={club.id} club={club} onEdit={() => handleEditClub(club)} />
         ))}
       </div>
     );
@@ -188,10 +215,10 @@ function Clubs() {
               Live data pulled directly from the Connect Camp Supabase project.
             </p>
           </div>
-          <Sheet open={createSheetOpen} onOpenChange={(open) => {
-            setCreateSheetOpen(open);
+          <Sheet open={sheetOpen} onOpenChange={(open) => {
+            setSheetOpen(open);
             if (!open) {
-              resetCreateClubForm();
+              resetForm();
             }
           }}>
             <SheetTrigger asChild>
@@ -199,12 +226,14 @@ function Clubs() {
             </SheetTrigger>
             <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
               <SheetHeader>
-                <SheetTitle>Create a new club</SheetTitle>
+                <SheetTitle>{editingClub ? "Edit club" : "Create a new club"}</SheetTitle>
                 <p className="text-sm text-muted-foreground">
-                  Fill out the form to publish a new organization to the roster.
+                  {editingClub
+                    ? "Update the details for this organization."
+                    : "Fill out the form to publish a new organization to the roster."}
                 </p>
               </SheetHeader>
-              <form className="mt-6 space-y-4" onSubmit={handleCreateClub}>
+              <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Club name *</label>
                   <Input
@@ -227,24 +256,38 @@ function Clubs() {
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
+                  <div className="space-y-2 flex flex-col">
                     <label className="text-sm font-medium text-foreground">Meeting day</label>
-                    <Input
-                      value={createForm.day}
-                      onChange={(event) =>
-                        setCreateForm((prev) => ({ ...prev, day: event.target.value }))
-                      }
-                      placeholder="Thursdays"
-                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !date && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {date ? format(date, "PPP") : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={date}
+                          onSelect={setDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">Meeting time</label>
-                    <Input
+                    <TimePicker
                       value={createForm.time}
-                      onChange={(event) =>
-                        setCreateForm((prev) => ({ ...prev, time: event.target.value }))
+                      onChange={(value) =>
+                        setCreateForm((prev) => ({ ...prev, time: value }))
                       }
-                      placeholder="6:00 PM"
                     />
                   </div>
                 </div>
@@ -260,14 +303,11 @@ function Clubs() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Upload club logo</label>
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)}
+                  <ImageUpload
+                    value={logoUrl}
+                    onChange={setLogoUrl}
+                    bucket="club-logos"
                   />
-                  {logoFile && (
-                    <p className="text-xs text-muted-foreground">Selected file: {logoFile.name}</p>
-                  )}
                 </div>
                 {createError && <p className="text-sm text-destructive">{createError}</p>}
                 <SheetFooter className="gap-3">
@@ -275,14 +315,14 @@ function Clubs() {
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      setCreateSheetOpen(false);
-                      resetCreateClubForm();
+                      setSheetOpen(false);
+                      resetForm();
                     }}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={createSubmitting}>
-                    {createSubmitting ? "Creating..." : "Create Club"}
+                  <Button type="submit" disabled={submitting}>
+                    {submitting ? "Saving..." : (editingClub ? "Save Changes" : "Create Club")}
                   </Button>
                 </SheetFooter>
               </form>
@@ -297,7 +337,7 @@ function Clubs() {
 
 export default Clubs;
 
-const ClubCard = ({ club }: { club: Club }) => {
+const ClubCard = ({ club, onEdit }: { club: Club; onEdit: () => void }) => {
   const memberCount = useRealtimeMembers(club.id);
   const logoUrl = club.cover_image_url;
   const meetingDay = club.day ?? "TBD";
@@ -327,6 +367,7 @@ const ClubCard = ({ club }: { club: Club }) => {
               variant="outline"
               size="sm"
               className="rounded-full border-border/60 text-foreground hover:bg-muted/50"
+              onClick={onEdit}
             >
               Edit
             </Button>
@@ -334,6 +375,7 @@ const ClubCard = ({ club }: { club: Club }) => {
               variant="outline"
               size="sm"
               className="rounded-full border-transparent bg-violet-100 text-violet-600 hover:bg-violet-200"
+              onClick={() => window.location.href = `/clubs/manage?id=${club.id}`}
             >
               Manage
             </Button>

@@ -13,11 +13,13 @@ import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/lib/supabaseClient";
 
+import { formatDate } from "@/lib/formatDate";
+
 type EventRow = {
   id: string;
   name: string;
   description: string | null;
-  day: string | null;
+  date: string | null;
   time: string | null;
   location: string | null;
   approved: boolean | null;
@@ -83,7 +85,7 @@ function Events() {
           <TableHeader>
             <TableRow>
               <TableHead>Event</TableHead>
-              <TableHead>Day / Time</TableHead>
+              <TableHead>Date / Time</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -100,7 +102,7 @@ function Events() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="text-sm font-medium">{event.day ?? "TBD"}</div>
+                  <div className="text-sm font-medium">{formatDate(event.date)}</div>
                   <div className="text-xs text-muted-foreground">
                     {event.time ?? "To be scheduled"}
                   </div>

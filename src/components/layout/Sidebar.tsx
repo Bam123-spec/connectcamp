@@ -1,15 +1,14 @@
-import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Home,
   CalendarDays,
   Users,
+  UserCog,
   Settings,
   Building2,
   LogOut,
   HelpCircle,
   ChevronsRight,
-  ChevronDown,
   ClipboardCheck,
   MessageSquare,
   UserPlus,
@@ -33,9 +32,11 @@ export const primaryLinks: SidebarLink[] = [
 
 export const manageLinks: SidebarLink[] = [
   { label: "Add Members", href: "/members/add", icon: UserPlus },
+  { label: "User Management", href: "/users", icon: UserCog },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Forms", href: "/forms", icon: ClipboardList },
-  { label: "Tasks", href: "/tasks", icon: ClipboardCheck },
+  { label: "Pending Approvals", href: "/approvals", icon: ClipboardCheck },
+  { label: "Tasks", href: "/tasks", icon: ClipboardList },
   { label: "Messaging", href: "/messaging", icon: MessageSquare },
   { label: "Officers", href: "/officers", icon: Users },
 ];
@@ -48,25 +49,17 @@ const accountLinks: SidebarLink[] = [
 
 interface SidebarProps {
   className?: string;
+  open: boolean;
+  setOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-function Sidebar({ className }: SidebarProps) {
-  const location = useLocation();
-  const [open, setOpen] = useState(true);
-  const [selected, setSelected] = useState(primaryLinks[0].label);
-
-  useEffect(() => {
-    const allLinks = [...primaryLinks, ...manageLinks, ...accountLinks];
-    const active = allLinks.find((link) => link.href === location.pathname)?.label ?? primaryLinks[0].label;
-    setSelected(active);
-  }, [location.pathname]);
-
+function Sidebar({ className, open, setOpen }: SidebarProps) {
   return (
     <aside className={cn("hidden md:block", className)}>
       <nav
         className={cn(
-          "sticky top-0 flex h-screen flex-col border-r border-gray-200 bg-white p-2 text-gray-700 shadow-sm transition-all duration-300 ease-in-out dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100",
-          open ? "w-64" : "w-16",
+          "flex h-full flex-col border-r border-zinc-800 bg-[#18181b] p-3 text-zinc-400 shadow-xl transition-all duration-300 ease-in-out",
+          open ? "w-64" : "w-20",
         )}
       >
         <TitleSection open={open} />
@@ -79,16 +72,14 @@ function Sidebar({ className }: SidebarProps) {
               title={link.label}
               href={link.href}
               open={open}
-              isSelected={selected === link.label}
-              onSelect={() => setSelected(link.label)}
             />
           ))}
         </div>
 
-        <div className="space-y-5 border-t border-gray-200 pt-4 dark:border-gray-800">
+        <div className="space-y-6 border-t border-zinc-800 pt-6">
           <div>
             {open && (
-              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
                 Manage
               </div>
             )}
@@ -100,17 +91,14 @@ function Sidebar({ className }: SidebarProps) {
                   title={link.label}
                   href={link.href}
                   open={open}
-                  isSelected={selected === link.label}
-                  onSelect={() => setSelected(link.label)}
                 />
               ))}
             </div>
           </div>
 
           <div>
-            {!open && <div className="mx-2 border-t border-gray-200 dark:border-gray-800" />}
             {open && (
-              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
                 Account
               </div>
             )}
@@ -122,8 +110,6 @@ function Sidebar({ className }: SidebarProps) {
                   title={link.label}
                   href={link.href}
                   open={open}
-                  isSelected={selected === link.label}
-                  onSelect={() => setSelected(link.label)}
                 />
               ))}
             </div>
@@ -141,83 +127,72 @@ const Option = ({
   title,
   href,
   open,
-  isSelected,
-  onSelect,
 }: {
   Icon: React.ComponentType<{ className?: string }>;
   title: string;
   href: string;
   open: boolean;
-  isSelected: boolean;
-  onSelect: () => void;
-}) => (
-  <NavLink
-    to={href}
-    className={({ isActive }) =>
-      cn(
-        "relative flex h-11 w-full items-center rounded-md transition-all duration-200",
-        (isActive || isSelected)
-          ? "border-l-2 border-primary bg-primary/10 text-primary"
-          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100",
-      )
-    }
-    onClick={onSelect}
-  >
-    <div className="grid h-full w-12 place-content-center">
-      <Icon className="h-4 w-4" />
-    </div>
-    <div className="flex flex-1 min-w-0 items-center">
-      <span
-        className={cn(
-          "text-sm font-medium whitespace-nowrap transition-opacity duration-200",
-          open ? "opacity-100" : "opacity-0 pointer-events-none",
-        )}
-      >
-        {title}
-      </span>
-    </div>
-  </NavLink>
-);
+}) => {
+  const location = useLocation();
+  return (
+    <NavLink
+      to={href}
+      className={({ isActive }) => {
+        // Custom active logic for nested routes
+        const isPathActive = isActive || (href !== "/" && location.pathname.startsWith(href));
+
+        return cn(
+          "group relative flex h-10 w-full items-center rounded-md px-3 transition-all duration-200",
+          isPathActive
+            ? "bg-white/10 text-white shadow-sm"
+            : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100",
+        );
+      }}
+    >
+      <div className="flex items-center justify-center">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className={cn("flex flex-1 items-center overflow-hidden transition-all duration-300", open ? "ml-3 opacity-100" : "w-0 ml-0 opacity-0")}>
+        <span className="text-sm font-medium whitespace-nowrap">
+          {title}
+        </span>
+      </div>
+    </NavLink>
+  );
+};
 
 const TitleSection = ({ open }: { open: boolean }) => {
   return (
-    <div className="mb-6 border-b border-gray-200 pb-4 dark:border-gray-800">
-      <div className="flex cursor-pointer items-center justify-between rounded-md p-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/40">
-        <div className="flex items-center gap-3">
-          <Logo />
-          {open && (
-            <div className="transition-opacity duration-200">
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                Connect Camp
-              </p>
-              {open && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                  Admin Workspace
-                </p>
-              )}
-            </div>
-          )}
+    <div className="mb-8 px-1">
+      <div className="flex items-center gap-3 overflow-hidden">
+        <Logo />
+        <div className={cn("flex flex-col transition-all duration-300", open ? "opacity-100" : "opacity-0 w-0")}>
+          <span className="text-base font-bold text-white tracking-tight whitespace-nowrap">
+            Connect Camp
+          </span>
+          <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+            Admin Workspace
+          </span>
         </div>
-        {open && <ChevronDown className="h-4 w-4 text-gray-400 dark:text-gray-500" />}
       </div>
     </div>
   );
 };
 
 const Logo = () => (
-  <div className="grid size-10 shrink-0 place-content-center rounded-lg bg-black text-white shadow-sm">
+  <div className="grid size-9 shrink-0 place-content-center rounded-lg bg-white text-black shadow-sm ring-1 ring-white/20">
     <svg
       viewBox="0 0 128 128"
-      className="h-7 w-7"
+      className="h-5 w-5"
       aria-hidden="true"
       focusable="false"
     >
       <rect width="128" height="128" rx="24" fill="currentColor" />
       <path
-        fill="#fff"
+        fill="#000"
         d="M64 18c-25.4 0-46 20.6-46 46s20.6 46 46 46c11.2 0 21.8-4 30.1-11.4l-14-16.8A23 23 0 0 1 64 85c-13 0-23.6-10.6-23.6-23.7S51 37.5 64 37.5c7.7 0 14.7 3.7 19.2 9.6l13.9-16.7C88.7 22 76.8 18 64 18Z"
       />
-      <circle cx="64" cy="61.3" r="11" fill="#000" />
+      <circle cx="64" cy="61.3" r="11" fill="#fff" />
     </svg>
   </div>
 );
@@ -231,20 +206,18 @@ const ToggleClose = ({
 }) => (
   <button
     onClick={() => setOpen(!open)}
-    className="mt-auto border-t border-gray-200 dark:border-gray-800"
+    className="mt-auto flex items-center border-t border-zinc-800 pt-4 text-zinc-500 hover:text-zinc-300 transition-colors"
   >
-    <div className="flex items-center p-3">
-      <div className="grid size-10 place-content-center">
-        <ChevronsRight
-          className={cn(
-            "h-4 w-4 text-gray-500 transition-transform duration-300 dark:text-gray-400",
-            open && "rotate-180",
-          )}
-        />
-      </div>
-      {open && (
-        <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Hide</span>
-      )}
+    <div className="grid h-10 w-10 place-content-center">
+      <ChevronsRight
+        className={cn(
+          "h-5 w-5 transition-transform duration-300",
+          open && "rotate-180",
+        )}
+      />
+    </div>
+    <div className={cn("overflow-hidden transition-all duration-300", open ? "w-auto opacity-100" : "w-0 opacity-0")}>
+      <span className="text-sm font-medium whitespace-nowrap">Collapse Sidebar</span>
     </div>
   </button>
 );

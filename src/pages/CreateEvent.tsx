@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ImageUpload } from "@/components/ImageUpload";
+import { TimePicker } from "@/components/ui/time-picker";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 
 const statusOptions = [
   {
@@ -24,7 +31,7 @@ function CreateEvent() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [day, setDay] = useState("");
+  const [date, setDate] = useState<Date | undefined>(undefined);
   const [time, setTime] = useState("");
   const [location, setLocation] = useState("");
   const [coverImage, setCoverImage] = useState("");
@@ -40,7 +47,7 @@ function CreateEvent() {
     const { error: supabaseError } = await supabase.from("events").insert({
       name,
       description,
-      day,
+      date: date ? format(date, "yyyy-MM-dd") : null,
       time,
       location,
       cover_image_url: coverImage,
@@ -93,13 +100,34 @@ function CreateEvent() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Day</label>
-                <Input value={day} onChange={(event) => setDay(event.target.value)} placeholder="Friday, March 21" />
+              <div className="space-y-2 flex flex-col">
+                <label className="text-sm font-medium">Date</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !date && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {date ? format(date, "PPP") : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={date}
+                      onSelect={setDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Time</label>
-                <Input value={time} onChange={(event) => setTime(event.target.value)} placeholder="3:00 – 4:30 PM" />
+                <TimePicker value={time} onChange={setTime} />
               </div>
             </div>
 
@@ -113,8 +141,12 @@ function CreateEvent() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Cover image URL</label>
-              <Input value={coverImage} onChange={(event) => setCoverImage(event.target.value)} placeholder="https://" />
+              <label className="text-sm font-medium">Cover image</label>
+              <ImageUpload
+                value={coverImage}
+                onChange={setCoverImage}
+                bucket="events"
+              />
             </div>
 
             <div className="space-y-2">
@@ -125,9 +157,8 @@ function CreateEvent() {
                     key={option.value}
                     type="button"
                     onClick={() => setStatus(option.value)}
-                    className={`rounded-full border px-3 py-1 text-sm shadow-sm transition ${
-                      status === option.value ? "border-foreground" : "border-muted"
-                    }`}
+                    className={`rounded-full border px-3 py-1 text-sm shadow-sm transition ${status === option.value ? "border-foreground" : "border-muted"
+                      }`}
                   >
                     <Badge className={option.badgeClass}>{option.label}</Badge>
                   </button>

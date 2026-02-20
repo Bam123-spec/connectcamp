@@ -9,9 +9,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/lib/supabaseClient";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
-import { Users, Building2, CalendarDays, ShieldCheck } from "lucide-react";
+import { Users, Building2, CalendarDays, ShieldCheck, AlertTriangle, Activity } from "lucide-react";
+import { AnalyticsChatbot } from "@/components/AnalyticsChatbot";
 
 type ClubRow = {
   id: string;
@@ -29,9 +32,7 @@ type ClubRow = {
 type MemberRow = {
   id: string;
   club_id: string | null;
-  student_id?: string | null;
   user_id?: string | null;
-  email?: string | null;
   created_at?: string | null;
 };
 
@@ -40,21 +41,18 @@ type EventRow = {
   club_id: string | null;
   created_at?: string | null;
   event_date?: string | null;
+  approved?: boolean | null;
 };
 
 type OfficerRow = {
   id: string;
+  club_id: string | null;
   approved?: boolean | null;
 };
 
 type PostRow = {
   id: string;
   club_id: string | null;
-  created_at?: string | null;
-};
-
-type AttendanceRow = {
-  id: string;
   created_at?: string | null;
 };
 
@@ -80,6 +78,8 @@ type TopClub = {
   name: string;
   memberCount: number;
   category?: string | null;
+  healthScore: number;
+  healthStatus: "Excellent" | "Fair" | "Critical";
 };
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -117,10 +117,16 @@ const Analytics = () => {
   const [stats, setStats] = useState({
     totalClubs: 0,
     activeClubs: 0,
+    atRiskClubs: 0,
     totalMembers: 0,
+    activeMemberRate: 0,
     eventsThisWeek: 0,
+    avgAttendanceRatio: 0, // Placeholder
     activeOfficers: 0,
+    officerVacancyRate: 0,
     newMembers7Days: 0,
+    pendingApprovals: 0,
+    ghostClubs: 0,
   });
 
   const [topClubs, setTopClubs] = useState<TopClub[]>([]);
@@ -130,7 +136,6 @@ const Analytics = () => {
   const [weeklyActiveMembers, setWeeklyActiveMembers] = useState<ChartPoint[]>([]);
   const [weeklyEvents, setWeeklyEvents] = useState<ChartPoint[]>([]);
   const [engagement, setEngagement] = useState<EngagementPoint[]>([]);
-  const [attendanceTrend, setAttendanceTrend] = useState<ChartPoint[]>([]);
   const [formTrend, setFormTrend] = useState<ChartPoint[]>([]);
   const [newMembersTrend, setNewMembersTrend] = useState<ChartPoint[]>([]);
 
@@ -149,6 +154,8 @@ const Analytics = () => {
         last7DaysStart.setUTCDate(last7DaysStart.getUTCDate() - 6);
         const last30DaysStart = new Date(now);
         last30DaysStart.setUTCDate(last30DaysStart.getUTCDate() - 29);
+        const last60DaysStart = new Date(now);
+        last60DaysStart.setUTCDate(last60DaysStart.getUTCDate() - 59);
 
         const [
           { data: clubsData = [] },
@@ -156,15 +163,13 @@ const Analytics = () => {
           { data: eventsData = [] },
           { data: officersData = [] },
           postsData,
-          attendanceData,
           formData,
         ] = await Promise.all([
           supabase.from("clubs").select("id,name,created_at,category,approved,is_active"),
-          supabase.from("club_members").select("id,club_id,student_id,user_id,email,created_at"),
-          supabase.from("events").select("id,club_id,event_date,created_at"),
-          supabase.from("officers").select("id,approved"),
+          supabase.from("club_members").select("id,club_id,user_id,created_at"),
+          supabase.from("events").select("id,club_id,event_date,created_at,approved"),
+          supabase.from("officers").select("id,club_id,approved"),
           fetchOptionalTable<PostRow>("posts", "id,club_id,created_at"),
-          fetchOptionalTable<AttendanceRow>("event_attendance", "id,created_at"),
           fetchOptionalTable<FormSubmissionRow>("form_submissions", "id,created_at"),
         ]);
 
@@ -175,6 +180,7 @@ const Analytics = () => {
         const events = (eventsData as EventRow[]) ?? [];
         const officers = (officersData as OfficerRow[]) ?? [];
 
+        // --- Basic Stats ---
         const totalClubs = clubs.length;
         const activeClubs = clubs.filter((club) => {
           if (typeof club.is_active === "boolean") return club.is_active;
@@ -182,7 +188,8 @@ const Analytics = () => {
           return true;
         }).length;
 
-        const uniqueMemberIds = new Set(members.map((member) => member.student_id || member.user_id || member.email || member.id));
+        const uniqueMemberIds = new Set(members.map((member) => member.user_id || member.id));
+        const totalMembers = uniqueMemberIds.size;
 
         const eventsThisWeek = events.filter((event) => {
           const dateValue = event.event_date || event.created_at;
@@ -199,14 +206,76 @@ const Analytics = () => {
           return date >= last7DaysStart && date <= now;
         }).length;
 
+        // --- Enhanced Metrics ---
+
+        // 1. At-Risk Clubs: 0 events AND 0 posts in last 60 days
+        const recentActivityMap = new Map<string, boolean>();
+        events.forEach(e => {
+          const d = new Date(e.event_date || e.created_at || "");
+          if (d >= last60DaysStart && e.club_id) recentActivityMap.set(e.club_id, true);
+        });
+        postsData.forEach(p => {
+          const d = new Date(p.created_at || "");
+          if (d >= last60DaysStart && p.club_id) recentActivityMap.set(p.club_id, true);
+        });
+
+        const atRiskClubs = clubs.filter(c => !recentActivityMap.has(c.id)).length;
+
+        // 2. Active Member Rate (Proxy: Members in active clubs / Total Members)
+        // Since we don't have attendance, we'll define "Active Member" as belonging to a club with recent activity
+        const membersInActiveClubs = members.filter(m => m.club_id && recentActivityMap.has(m.club_id)).length;
+        const activeMemberRate = totalMembers > 0 ? Math.round((membersInActiveClubs / members.length) * 100) : 0;
+
+        // 3. Officer Vacancy Rate: Clubs with < 2 active officers
+        const officerCountMap = new Map<string, number>();
+        officers.forEach(o => {
+          if (o.approved !== false && o.club_id) {
+            officerCountMap.set(o.club_id, (officerCountMap.get(o.club_id) || 0) + 1);
+          }
+        });
+        const clubsWithVacancies = clubs.filter(c => (officerCountMap.get(c.id) || 0) < 2).length;
+        const officerVacancyRate = totalClubs > 0 ? Math.round((clubsWithVacancies / totalClubs) * 100) : 0;
+
+        // 4. Ghost Clubs: Created > 30 days ago, <= 1 member, 0 events
+        const clubMemberCountMap = new Map<string, number>();
+        members.forEach(m => {
+          if (m.club_id) clubMemberCountMap.set(m.club_id, (clubMemberCountMap.get(m.club_id) || 0) + 1);
+        });
+        const clubEventCountMap = new Map<string, number>();
+        events.forEach(e => {
+          if (e.club_id) clubEventCountMap.set(e.club_id, (clubEventCountMap.get(e.club_id) || 0) + 1);
+        });
+
+        const ghostClubs = clubs.filter(c => {
+          const created = new Date(c.created_at || "");
+          const ageDays = (now.getTime() - created.getTime()) / (1000 * 3600 * 24);
+          const memberCount = clubMemberCountMap.get(c.id) || 0;
+          const eventCount = clubEventCountMap.get(c.id) || 0;
+          return ageDays > 30 && memberCount <= 1 && eventCount === 0;
+        }).length;
+
+        // 5. Pending Approvals (Intervention Signals)
+        const pendingClubs = clubs.filter(c => c.approved === false || c.approved === null).length; // Assuming null/false is pending/unapproved
+        const pendingEvents = events.filter(e => !e.approved).length;
+        const pendingOfficers = officers.filter(o => !o.approved).length;
+        const totalPending = pendingClubs + pendingEvents + pendingOfficers;
+
         setStats({
           totalClubs,
           activeClubs,
-          totalMembers: uniqueMemberIds.size,
+          atRiskClubs,
+          totalMembers,
+          activeMemberRate,
           eventsThisWeek,
+          avgAttendanceRatio: 0, // No data
           activeOfficers,
+          officerVacancyRate,
           newMembers7Days: newMembersLast7,
+          pendingApprovals: totalPending,
+          ghostClubs,
         });
+
+        // --- Charts & Tables ---
 
         const engagementMap = new Map<string, EngagementPoint>();
         for (let i = 0; i < 7; i += 1) {
@@ -251,30 +320,41 @@ const Analytics = () => {
 
         setEngagement(Array.from(engagementMap.values()));
 
-        const topClubMap = new Map<string, { name: string; count: number; category?: string | null }>();
-        members.forEach((member) => {
-          if (!member.club_id) return;
-          const club = clubs.find((c) => c.id === member.club_id);
-          if (!club) return;
+        // Health Score Calculation
+        const topClubList: TopClub[] = clubs.map(club => {
+          const memberCount = clubMemberCountMap.get(club.id) || 0;
+          const eventCount = clubEventCountMap.get(club.id) || 0;
+          const officerCount = officerCountMap.get(club.id) || 0;
 
-          const existing = topClubMap.get(member.club_id) || {
+          // Simple Health Score (0-100)
+          // 40% Engagement (Members > 5 -> full points?) -> Let's use member count relative to avg? 
+          // Let's stick to the plan: 40% Engagement, 30% Consistency, 30% Compliance
+          // Since we lack detailed data, we'll approximate:
+          // Engagement: Member count (capped at 50 for max score) -> 40 pts
+          // Consistency: Event count (capped at 5) -> 30 pts
+          // Compliance: Officers >= 2 -> 30 pts
+
+          const engagementScore = Math.min(memberCount, 50) / 50 * 40;
+          const consistencyScore = Math.min(eventCount, 5) / 5 * 30;
+          const complianceScore = officerCount >= 2 ? 30 : (officerCount * 15);
+
+          const healthScore = Math.round(engagementScore + consistencyScore + complianceScore);
+
+          let healthStatus: "Excellent" | "Fair" | "Critical" = "Critical";
+          if (healthScore >= 80) healthStatus = "Excellent";
+          else if (healthScore >= 50) healthStatus = "Fair";
+
+          return {
+            id: club.id,
             name: club.name,
-            count: 0,
+            memberCount,
             category: club.category,
+            healthScore,
+            healthStatus
           };
-          existing.count += 1;
-          topClubMap.set(member.club_id, existing);
-        });
-
-        const topClubList: TopClub[] = Array.from(topClubMap.entries())
-          .sort((a, b) => b[1].count - a[1].count)
-          .slice(0, 5)
-          .map(([id, info]) => ({
-            id,
-            name: info.name,
-            memberCount: info.count,
-            category: info.category,
-          }));
+        })
+          .sort((a, b) => b.memberCount - a.memberCount)
+          .slice(0, 5);
 
         setTopClubs(topClubList);
 
@@ -398,25 +478,6 @@ const Analytics = () => {
             })),
         );
 
-        if (attendanceData.length) {
-          const attendanceMap = new Map<string, number>();
-          attendanceData.forEach((record) => {
-            if (!record.created_at) return;
-            const week = getWeekStart(new Date(record.created_at)).toISOString().split("T")[0];
-            attendanceMap.set(week, (attendanceMap.get(week) ?? 0) + 1);
-          });
-          setAttendanceTrend(
-            Array.from(attendanceMap.entries())
-              .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
-              .map(([key, value]) => ({
-                label: weekFormatter.format(new Date(key)),
-                value,
-              })),
-          );
-        } else {
-          setAttendanceTrend([]);
-        }
-
         if (formData.length) {
           const formMap = new Map<string, number>();
           formData.forEach((form) => {
@@ -455,24 +516,31 @@ const Analytics = () => {
         value: stats.totalClubs.toLocaleString(),
         icon: Building2,
         description: `${stats.activeClubs} active`,
+        insight: stats.atRiskClubs > 0 ? `⚠️ ${stats.atRiskClubs} clubs inactive for 60+ days` : undefined,
+        insightColor: "text-amber-600",
       },
       {
         title: "Total Members",
         value: stats.totalMembers.toLocaleString(),
         icon: Users,
         description: `${stats.newMembers7Days} joined last 7 days`,
+        insight: `${stats.activeMemberRate}% active participation`,
+        insightColor: "text-green-600",
       },
       {
         title: "Events This Week",
         value: stats.eventsThisWeek.toString(),
         icon: CalendarDays,
         description: "Current calendar week",
+        // insight: "Avg. 65% turnout", // Placeholder until attendance data exists
       },
       {
         title: "Active Officers",
         value: stats.activeOfficers.toString(),
         icon: ShieldCheck,
         description: "Across all clubs",
+        insight: stats.officerVacancyRate > 0 ? `🚨 ${stats.officerVacancyRate}% clubs missing key officers` : undefined,
+        insightColor: "text-red-600",
       },
     ],
     [stats],
@@ -484,6 +552,18 @@ const Analytics = () => {
         <h1 className="text-2xl font-semibold">Analytics</h1>
         <p className="text-sm text-muted-foreground">Insight into Student Life engagement across clubs.</p>
       </div>
+
+      {/* Admin Intervention Signals */}
+      {stats.pendingApprovals > 0 && (
+        <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertTitle>Action Required</AlertTitle>
+          <AlertDescription>
+            You have {stats.pendingApprovals} pending items needing approval (Clubs, Events, or Officers).
+          </AlertDescription>
+        </Alert>
+      )}
+
       {error && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           Unable to load analytics: {error}
@@ -551,7 +631,11 @@ const Analytics = () => {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <EngagementChartCard data={engagement} loading={loading} />
+        <EngagementChartCard
+          data={engagement}
+          loading={loading}
+          ghostClubs={stats.ghostClubs}
+        />
         <LineChartCard
           title="New Members (Last 7 Days)"
           description="Daily onboarding trend"
@@ -561,16 +645,6 @@ const Analytics = () => {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        {attendanceTrend.length ? (
-          <LineChartCard
-            title="Event Attendance Trend"
-            description="Weekly attendance submissions"
-            data={attendanceTrend}
-            loading={loading}
-          />
-        ) : (
-          <EmptyChartCard title="Event Attendance Trend" description="Attendance table unavailable" />
-        )}
         {formTrend.length ? (
           <LineChartCard
             title="Form Submissions"
@@ -584,6 +658,14 @@ const Analytics = () => {
       </section>
 
       <TopClubsTable data={topClubs} loading={loading} />
+
+      <AnalyticsChatbot
+        context={{
+          stats,
+          topClubs,
+          engagement
+        }}
+      />
     </div>
   );
 };
@@ -595,11 +677,15 @@ const StatCard = ({
   value,
   description,
   icon: Icon,
+  insight,
+  insightColor,
 }: {
   title: string;
   value: string;
   description?: string;
   icon: ComponentType<{ className?: string }>;
+  insight?: string;
+  insightColor?: string;
 }) => (
   <Card>
     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -609,6 +695,11 @@ const StatCard = ({
     <CardContent>
       <p className="text-2xl font-semibold">{value}</p>
       {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      {insight && (
+        <p className={`mt-2 text-xs font-medium ${insightColor || "text-muted-foreground"}`}>
+          {insight}
+        </p>
+      )}
     </CardContent>
   </Card>
 );
@@ -691,8 +782,12 @@ const LineChartCard = ({
   </ChartWrapper>
 );
 
-const EngagementChartCard = ({ data, loading }: { data: EngagementPoint[]; loading?: boolean }) => (
-  <ChartWrapper title="Engagement Summary" description="Events + new members + posts (last 7 days)" loading={loading}>
+const EngagementChartCard = ({ data, loading, ghostClubs }: { data: EngagementPoint[]; loading?: boolean; ghostClubs?: number }) => (
+  <ChartWrapper
+    title="Engagement Summary"
+    description={ghostClubs && ghostClubs > 0 ? `Detected ${ghostClubs} ghost clubs (inactive > 30 days)` : "Events + new members + posts (last 7 days)"}
+    loading={loading}
+  >
     {data.length ? (
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data}>
@@ -731,7 +826,7 @@ const TopClubsTable = ({ data, loading }: { data: TopClub[]; loading?: boolean }
   <Card>
     <CardHeader>
       <CardTitle>Top Clubs</CardTitle>
-      <p className="text-sm text-muted-foreground">Ranking by member count</p>
+      <p className="text-sm text-muted-foreground">Ranking by member count & health score</p>
     </CardHeader>
     <CardContent>
       {loading ? (
@@ -743,6 +838,7 @@ const TopClubsTable = ({ data, loading }: { data: TopClub[]; loading?: boolean }
               <TableHead>Club</TableHead>
               <TableHead>Member Count</TableHead>
               <TableHead>Category</TableHead>
+              <TableHead>Health Score</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -751,6 +847,19 @@ const TopClubsTable = ({ data, loading }: { data: TopClub[]; loading?: boolean }
                 <TableCell className="font-medium">{club.name}</TableCell>
                 <TableCell>{club.memberCount.toLocaleString()}</TableCell>
                 <TableCell>{club.category ?? "—"}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Activity className={`h-4 w-4 ${club.healthStatus === "Excellent" ? "text-green-500" :
+                      club.healthStatus === "Fair" ? "text-amber-500" : "text-red-500"
+                      }`} />
+                    <span>{club.healthScore}</span>
+                    <Badge variant="outline" className={`text-xs ${club.healthStatus === "Excellent" ? "border-green-200 bg-green-50 text-green-700" :
+                      club.healthStatus === "Fair" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-red-200 bg-red-50 text-red-700"
+                      }`}>
+                      {club.healthStatus}
+                    </Badge>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
