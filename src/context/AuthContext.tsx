@@ -40,15 +40,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     async (nextSession: Session | null) => {
       setSession(nextSession);
       if (nextSession?.user?.id) {
-        setLoading(true);
-        await loadProfile(nextSession.user.id);
+        const shouldLoadProfile = profile?.id !== nextSession.user.id;
+        if (shouldLoadProfile) {
+          setLoading(true);
+          await loadProfile(nextSession.user.id);
+        }
         setLoading(false);
       } else {
         setProfile(null);
         setLoading(false);
       }
     },
-    [loadProfile],
+    [loadProfile, profile?.id],
   );
 
   useEffect(() => {
