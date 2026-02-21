@@ -20,6 +20,29 @@ begin
 end
 $$;
 
+-- Backfill legacy rows so org-scoped RLS works even on older single-tenant data.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'profiles'
+  ) then
+    update public.profiles
+    set org_id = '00000000-0000-0000-0000-000000000001'
+    where org_id is null;
+  end if;
+
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'clubs'
+  ) then
+    update public.clubs
+    set org_id = '00000000-0000-0000-0000-000000000001'
+    where org_id is null;
+  end if;
+end
+$$;
+
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null,

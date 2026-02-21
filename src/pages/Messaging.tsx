@@ -264,8 +264,6 @@ function Messaging() {
                   </div>
                 </div>
               ))
-            ) : conversations.length === 0 ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">No conversations found.</div>
             ) : (
               CATEGORY_ORDER.map((group) => {
                 const items = groupedConversations[group.key];
@@ -341,6 +339,19 @@ function Messaging() {
                   </section>
                 );
               })
+            )}
+            {!conversationsLoading && conversations.length === 0 && (
+              <div className="rounded-md border border-dashed bg-background p-3 text-center">
+                <p className="text-xs text-muted-foreground">No conversations yet.</p>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-xs"
+                  onClick={() => setNewConversationOpen(true)}
+                >
+                  Start a chat
+                </Button>
+              </div>
             )}
           </div>
         </ScrollArea>

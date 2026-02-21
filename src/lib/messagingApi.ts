@@ -173,13 +173,12 @@ export async function fetchConversationSummaries(params: {
   orgId: string;
   search: string;
 }) {
-  const { userId, orgId, search } = params;
+  const { userId, search } = params;
 
   const membershipResult = await supabase
     .from("conversation_members")
     .select("conversation_id")
-    .eq("user_id", userId)
-    .eq("org_id", orgId);
+    .eq("user_id", userId);
 
   if (membershipResult.error) throw membershipResult.error;
 
@@ -192,7 +191,6 @@ export async function fetchConversationSummaries(params: {
     supabase
       .from("conversations")
       .select("id, org_id, category, target_type, target_id, updated_at, last_message_at")
-      .eq("org_id", orgId)
       .in("id", conversationIds)
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .order("updated_at", { ascending: false }),
@@ -451,15 +449,25 @@ export async function fetchRecipientOptions(params: {
   const term = search.trim().toLowerCase();
 
   if (tab === "club") {
-    const clubsResult = await supabase
+    const scopedClubsResult = await supabase
       .from("clubs")
       .select("id, name, cover_image_url, org_id")
       .eq("org_id", orgId)
       .order("name", { ascending: true });
 
-    if (clubsResult.error) throw clubsResult.error;
+    if (scopedClubsResult.error) throw scopedClubsResult.error;
 
-    return ((clubsResult.data ?? []) as ClubRow[])
+    const scopedClubs = (scopedClubsResult.data ?? []) as ClubRow[];
+    const clubs = scopedClubs.length > 0
+      ? scopedClubs
+      : (
+        await supabase
+          .from("clubs")
+          .select("id, name, cover_image_url, org_id")
+          .order("name", { ascending: true })
+      ).data ?? [];
+
+    return (clubs as ClubRow[])
       .filter((club) => (term ? club.name.toLowerCase().includes(term) : true))
       .map((club) => ({
         key: club.id,
@@ -486,15 +494,25 @@ export async function fetchRecipientOptions(params: {
 
     if (userIds.length === 0) return [] as RecipientOption[];
 
-    const profileResult = await supabase
+    const scopedProfileResult = await supabase
       .from("profiles")
       .select("id, full_name, email, avatar_url, org_id")
       .in("id", userIds)
       .eq("org_id", orgId);
 
-    if (profileResult.error) throw profileResult.error;
+    if (scopedProfileResult.error) throw scopedProfileResult.error;
 
-    const profiles = (profileResult.data ?? []) as ProfileRow[];
+    let profiles = (scopedProfileResult.data ?? []) as ProfileRow[];
+    if (profiles.length === 0) {
+      const fallbackProfileResult = await supabase
+        .from("profiles")
+        .select("id, full_name, email, avatar_url, org_id")
+        .in("id", userIds);
+
+      if (fallbackProfileResult.error) throw fallbackProfileResult.error;
+      profiles = (fallbackProfileResult.data ?? []) as ProfileRow[];
+    }
+
     if (profiles.length === 0) return [] as RecipientOption[];
 
     const clubIds = Array.from(new Set(officerRows.map((row) => row.club_id).filter((id): id is string => Boolean(id))));
@@ -536,7 +554,7 @@ export async function fetchRecipientOptions(params: {
     return options;
   }
 
-  const adminResult = await supabase
+  const scopedAdminResult = await supabase
     .from("profiles")
     .select("id, full_name, email, role, avatar_url, org_id")
     .eq("org_id", orgId)
@@ -544,9 +562,22 @@ export async function fetchRecipientOptions(params: {
     .neq("id", currentUserId)
     .order("full_name", { ascending: true });
 
-  if (adminResult.error) throw adminResult.error;
+  if (scopedAdminResult.error) throw scopedAdminResult.error;
 
-  return ((adminResult.data ?? []) as ProfileRow[])
+  let admins = (scopedAdminResult.data ?? []) as ProfileRow[];
+  if (admins.length === 0) {
+    const fallbackAdminResult = await supabase
+      .from("profiles")
+      .select("id, full_name, email, role, avatar_url, org_id")
+      .in("role", ADMIN_ROLES)
+      .neq("id", currentUserId)
+      .order("full_name", { ascending: true });
+
+    if (fallbackAdminResult.error) throw fallbackAdminResult.error;
+    admins = (fallbackAdminResult.data ?? []) as ProfileRow[];
+  }
+
+  return admins
     .filter((profile) => {
       if (!term) return true;
       const sample = `${profile.full_name ?? ""} ${profile.email ?? ""}`.toLowerCase();
@@ -570,7 +601,7 @@ async function resolveTargetUser(params: {
   const { orgId, targetType, targetId } = params;
 
   if (targetType === "club") {
-    const clubResult = await supabase
+    let clubResult = await supabase
       .from("clubs")
       .select("id, org_id, primary_user_id")
       .eq("id", targetId)
@@ -578,6 +609,15 @@ async function resolveTargetUser(params: {
       .maybeSingle();
 
     if (clubResult.error) throw clubResult.error;
+    if (!clubResult.data) {
+      clubResult = await supabase
+        .from("clubs")
+        .select("id, org_id, primary_user_id")
+        .eq("id", targetId)
+        .maybeSingle();
+
+      if (clubResult.error) throw clubResult.error;
+    }
 
     const club = clubResult.data as ClubRow | null;
     if (!club) throw new Error("Club not found in this organization.");
@@ -607,7 +647,7 @@ async function resolveTargetUser(params: {
     };
   }
 
-  const profileResult = await supabase
+  let profileResult = await supabase
     .from("profiles")
     .select("id, org_id, role, club_id")
     .eq("id", targetId)
@@ -615,6 +655,15 @@ async function resolveTargetUser(params: {
     .maybeSingle();
 
   if (profileResult.error) throw profileResult.error;
+  if (!profileResult.data) {
+    profileResult = await supabase
+      .from("profiles")
+      .select("id, org_id, role, club_id")
+      .eq("id", targetId)
+      .maybeSingle();
+
+    if (profileResult.error) throw profileResult.error;
+  }
 
   const profile = profileResult.data as {
     id: string;
@@ -663,7 +712,6 @@ export async function getOrCreateConversation(params: {
   const membershipResult = await supabase
     .from("conversation_members")
     .select("conversation_id")
-    .eq("org_id", orgId)
     .eq("user_id", currentUserId);
 
   if (membershipResult.error) throw membershipResult.error;
@@ -675,7 +723,6 @@ export async function getOrCreateConversation(params: {
     const existingResult = await supabase
       .from("conversations")
       .select("id")
-      .eq("org_id", orgId)
       .eq("target_type", targetType)
       .eq("target_id", targetId)
       .in("id", conversationIds)
