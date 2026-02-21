@@ -52,7 +52,7 @@ function AppLayout() {
         <Sidebar
           open={sidebarOpen}
           setOpen={setSidebarOpen}
-          className="fixed left-0 top-0 z-20 h-screen overflow-y-auto border-r bg-background"
+          className="fixed left-0 top-0 z-20 h-screen"
         />
       )}
 

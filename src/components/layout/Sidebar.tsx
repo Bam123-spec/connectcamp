@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
   CalendarDays,
@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 
 export type SidebarLink = {
   label: string;
@@ -44,7 +45,6 @@ export const manageLinks: SidebarLink[] = [
 const accountLinks: SidebarLink[] = [
   { label: "Settings", href: "/settings", icon: Settings },
   { label: "Support", href: "/settings", icon: HelpCircle },
-  { label: "Logout", href: "/login", icon: LogOut },
 ];
 
 interface SidebarProps {
@@ -54,64 +54,95 @@ interface SidebarProps {
 }
 
 function Sidebar({ className, open, setOpen }: SidebarProps) {
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/login");
+  };
+
   return (
-    <aside className={cn("hidden md:block", className)}>
+    <aside className={cn("hidden bg-[#18181b] md:block", className)}>
       <nav
         className={cn(
-          "flex h-full flex-col border-r border-zinc-800 bg-[#18181b] p-3 text-zinc-400 shadow-xl transition-all duration-300 ease-in-out",
+          "flex h-full flex-col overflow-hidden border-r border-zinc-800 bg-[#18181b] p-3 text-zinc-400 shadow-xl transition-all duration-300 ease-in-out",
           open ? "w-64" : "w-20",
         )}
       >
         <TitleSection open={open} />
-
-        <div className="mb-4 space-y-1">
-          {primaryLinks.map((link) => (
-            <Option
-              key={link.href}
-              Icon={link.icon}
-              title={link.label}
-              href={link.href}
-              open={open}
-            />
-          ))}
-        </div>
-
-        <div className="space-y-6 border-t border-zinc-800 pt-6">
-          <div>
-            {open && (
-              <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
-                Manage
-              </div>
-            )}
-            <div className="space-y-1">
-              {manageLinks.map((link) => (
-                <Option
-                  key={link.href}
-                  Icon={link.icon}
-                  title={link.label}
-                  href={link.href}
-                  open={open}
-                />
-              ))}
-            </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mb-4 space-y-1">
+            {primaryLinks.map((link) => (
+              <Option
+                key={link.href}
+                Icon={link.icon}
+                title={link.label}
+                href={link.href}
+                open={open}
+              />
+            ))}
           </div>
 
-          <div>
-            {open && (
-              <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
-                Account
+          <div className="space-y-6 border-t border-zinc-800 pt-6">
+            <div>
+              {open && (
+                <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Manage
+                </div>
+              )}
+              <div className="space-y-1">
+                {manageLinks.map((link) => (
+                  <Option
+                    key={link.href}
+                    Icon={link.icon}
+                    title={link.label}
+                    href={link.href}
+                    open={open}
+                  />
+                ))}
               </div>
-            )}
-            <div className="space-y-1">
-              {accountLinks.map((link) => (
-                <Option
-                  key={link.href}
-                  Icon={link.icon}
-                  title={link.label}
-                  href={link.href}
-                  open={open}
-                />
-              ))}
+            </div>
+
+            <div>
+              {open && (
+                <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Account
+                </div>
+              )}
+              <div className="space-y-1">
+                {accountLinks.map((link) => (
+                  <Option
+                    key={link.href}
+                    Icon={link.icon}
+                    title={link.label}
+                    href={link.href}
+                    open={open}
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className={cn(
+                    "group relative flex h-10 w-full items-center rounded-md px-3 text-zinc-400 transition-all duration-200 hover:bg-white/5 hover:text-zinc-100",
+                    !open && "justify-center px-0",
+                  )}
+                  title={!open ? "Logout" : undefined}
+                  aria-label="Logout"
+                >
+                  <LogOut className="h-5 w-5" />
+                  <div
+                    className={cn(
+                      "flex flex-1 items-center overflow-hidden transition-all duration-300",
+                      open ? "ml-3 opacity-100" : "ml-0 w-0 opacity-0",
+                    )}
+                  >
+                    <span className="whitespace-nowrap text-sm font-medium">
+                      Logout
+                    </span>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -143,11 +174,14 @@ const Option = ({
 
         return cn(
           "group relative flex h-10 w-full items-center rounded-md px-3 transition-all duration-200",
+          !open && "justify-center px-0",
           isPathActive
             ? "bg-white/10 text-white shadow-sm"
             : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100",
         );
       }}
+      title={!open ? title : undefined}
+      aria-label={title}
     >
       <div className="flex items-center justify-center">
         <Icon className="h-5 w-5" />
@@ -206,7 +240,11 @@ const ToggleClose = ({
 }) => (
   <button
     onClick={() => setOpen(!open)}
-    className="mt-auto flex items-center border-t border-zinc-800 pt-4 text-zinc-500 hover:text-zinc-300 transition-colors"
+    className={cn(
+      "mt-3 flex h-11 items-center rounded-md border-t border-zinc-800 pt-3 text-zinc-500 transition-colors hover:text-zinc-300",
+      open ? "justify-start" : "justify-center",
+    )}
+    aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
   >
     <div className="grid h-10 w-10 place-content-center">
       <ChevronsRight
