@@ -7,6 +7,7 @@ type Profile = {
   full_name: string | null;
   email: string | null;
   avatar_url: string | null;
+  org_id?: string | null;
   role: string | null;
   club_id: string | null;
   officer_title: string | null;
