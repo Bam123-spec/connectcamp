@@ -6,6 +6,7 @@ type Profile = {
   id: string;
   full_name: string | null;
   email: string | null;
+  avatar_url: string | null;
   role: string | null;
   club_id: string | null;
   officer_title: string | null;

@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { primaryLinks, manageLinks } from "./Sidebar";
+import { primaryLinks, manageLinks, accountLinks } from "./Sidebar";
 import type { SidebarLink } from "./Sidebar";
 import { useAuth } from "@/context/AuthContext";
 
@@ -23,6 +23,7 @@ const pageDescriptions: Record<string, string> = {
   "/events": "Review programming across every club.",
   "/officers": "Track leadership and staffing changes.",
   "/settings": "Adjust platform preferences and access.",
+  "/support": "Get help, troubleshooting, and contact options.",
 };
 
 function Topbar() {
@@ -30,7 +31,7 @@ function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const pathname = location.pathname;
-  const allLinks = [...primaryLinks, ...manageLinks];
+  const allLinks = [...primaryLinks, ...manageLinks, ...accountLinks];
   const activePage =
     allLinks.find((link) => {
       if (link.href === "/") return pathname === "/";
@@ -77,7 +78,7 @@ function Topbar() {
                   <p className="text-sm text-muted-foreground">Quick navigation</p>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {[...primaryLinks, ...manageLinks].map(({ label, href, icon: Icon }: SidebarLink) => (
+                  {[...primaryLinks, ...manageLinks, ...accountLinks].map(({ label, href, icon: Icon }: SidebarLink) => (
                     <NavLink
                       key={href}
                       to={href}
@@ -123,7 +124,7 @@ function Topbar() {
               >
                 <Avatar className="h-9 w-9">
                   <AvatarImage
-                    src="https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=200&q=60"
+                    src={profile?.avatar_url ?? undefined}
                     alt={displayName}
                   />
                   <AvatarFallback>{avatarFallback}</AvatarFallback>

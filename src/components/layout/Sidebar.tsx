@@ -42,9 +42,9 @@ export const manageLinks: SidebarLink[] = [
   { label: "Officers", href: "/officers", icon: Users },
 ];
 
-const accountLinks: SidebarLink[] = [
+export const accountLinks: SidebarLink[] = [
   { label: "Settings", href: "/settings", icon: Settings },
-  { label: "Support", href: "/settings", icon: HelpCircle },
+  { label: "Support", href: "/support", icon: HelpCircle },
 ];
 
 interface SidebarProps {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 
 import Login from "./pages/Login";
@@ -11,6 +11,7 @@ import Tasks from "./pages/Tasks";
 import Messaging from "./pages/Messaging";
 import Officers from "./pages/Officers";
 import Settings from "./pages/Settings";
+import Support from "./pages/Support";
 import Sidebar from "./components/layout/Sidebar";
 import Topbar from "./components/layout/Topbar";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -26,6 +27,13 @@ import PublicFormPage from "./pages/public/PublicFormPage";
 import UserManagement from "./pages/UserManagement";
 import PendingApprovals from "./pages/PendingApprovals";
 
+const SIDEBAR_COMPACT_STORAGE_KEY = "cc.sidebar.compact.default";
+
+const getInitialSidebarOpen = () => {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(SIDEBAR_COMPACT_STORAGE_KEY) !== "true";
+};
+
 function App() {
   return (
     <BrowserRouter>
@@ -39,7 +47,21 @@ function App() {
 function AppLayout() {
   const location = useLocation();
   const isLoginRoute = location.pathname === "/login";
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(getInitialSidebarOpen);
+
+  useEffect(() => {
+    const applySidebarPreference = () => {
+      setSidebarOpen(getInitialSidebarOpen());
+    };
+
+    window.addEventListener("storage", applySidebarPreference);
+    window.addEventListener("cc:settings-updated", applySidebarPreference);
+
+    return () => {
+      window.removeEventListener("storage", applySidebarPreference);
+      window.removeEventListener("cc:settings-updated", applySidebarPreference);
+    };
+  }, []);
 
   return (
     <div
@@ -190,6 +212,14 @@ function AppLayout() {
               element={
                 <ProtectedRoute>
                   <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/support"
+              element={
+                <ProtectedRoute>
+                  <Support />
                 </ProtectedRoute>
               }
             />
