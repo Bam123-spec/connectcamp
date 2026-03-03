@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
     Select,
     SelectContent,
@@ -50,6 +51,7 @@ export function FormBuilder({ fields, onChange }: FormBuilderProps) {
             description: "",
             options: ["Option 1", "Option 2"],
             order: fields.length,
+            required: false,
         };
         onChange([...fields, newField]);
     };
@@ -226,6 +228,15 @@ function FieldCard({
                                 className="text-sm text-muted-foreground"
                                 placeholder="Description (optional)"
                             />
+                            {field.type !== "section" && (
+                                <div className="flex items-center gap-3 pt-1">
+                                    <Switch
+                                        checked={Boolean(field.required)}
+                                        onCheckedChange={(checked) => onUpdate({ required: checked })}
+                                    />
+                                    <Label className="text-xs text-muted-foreground">Required field</Label>
+                                </div>
+                            )}
                         </div>
                         <Select
                             value={field.type}

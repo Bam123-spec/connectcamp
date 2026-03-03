@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import { supabase } from "@/lib/supabaseClient";
+import { saveQrCodeUrl } from "@/lib/formsDataApi";
 
 export async function generateFormQr(formId: string): Promise<{ publicUrl: string | null; dataUrl: string }> {
     let qrDataUrl = "";
@@ -23,30 +24,32 @@ export async function generateFormQr(formId: string): Promise<{ publicUrl: strin
 
         // 3. Upload to Supabase Storage
         const fileName = `${formId}-${Date.now()}.png`;
-        const { error: uploadError } = await supabase.storage
-            .from("form_qr_codes")
-            .upload(fileName, blob, {
+        const buckets = ["form_qr_codes", "form-qr"];
+        let storagePublicUrl: string | null = null;
+
+        for (const bucket of buckets) {
+            const { error: uploadError } = await supabase.storage.from(bucket).upload(fileName, blob, {
                 contentType: "image/png",
                 upsert: true,
             });
 
-        if (uploadError) {
-            console.error("Error uploading QR code:", uploadError);
+            if (uploadError) {
+                continue;
+            }
+
+            const { data } = supabase.storage.from(bucket).getPublicUrl(fileName);
+            storagePublicUrl = data.publicUrl;
+            break;
+        }
+
+        if (!storagePublicUrl) {
             return { publicUrl: null, dataUrl: qrDataUrl };
         }
 
-        // 4. Get Public URL
-        const { data } = supabase.storage.from("form_qr_codes").getPublicUrl(fileName);
-        const storagePublicUrl = data.publicUrl;
-
-        // 5. Update forms table
-        const { error: updateError } = await supabase
-            .from("forms")
-            .update({ qr_code_url: storagePublicUrl })
-            .eq("id", formId);
-
-        if (updateError) {
-            console.error("Error updating form with QR code:", updateError);
+        try {
+            await saveQrCodeUrl(formId, storagePublicUrl);
+        } catch (persistError) {
+            console.error("Error saving QR URL on form:", persistError);
         }
 
         return { publicUrl: storagePublicUrl, dataUrl: qrDataUrl };

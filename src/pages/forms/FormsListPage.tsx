@@ -23,42 +23,49 @@ import {
     QrCode,
     FileText,
     Loader2,
+    CheckCircle2,
+    Ban,
 } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
 import { QrCodeDialog } from "@/components/forms/QrCodeDialog";
 import type { Form } from "@/types/forms";
 import { format } from "date-fns";
+import { useAuth } from "@/context/AuthContext";
+import {
+    deleteForm,
+    listForms,
+    resolveFormsOrgId,
+    updateFormActiveState,
+} from "@/lib/formsDataApi";
 
 export default function FormsListPage() {
     const [forms, setForms] = useState<Form[]>([]);
     const [loading, setLoading] = useState(true);
+    const [busyFormId, setBusyFormId] = useState<string | null>(null);
     const [qrDialogOpen, setQrDialogOpen] = useState(false);
     const [selectedForm, setSelectedForm] = useState<Form | null>(null);
     const navigate = useNavigate();
     const { toast } = useToast();
+    const { profile } = useAuth();
 
     useEffect(() => {
         fetchForms();
-    }, []);
+    }, [profile?.org_id]);
 
     const fetchForms = async () => {
-        setLoading(true);
-        const { data, error } = await supabase
-            .from("forms")
-            .select("*")
-            .order("created_at", { ascending: false });
-
-        if (error) {
+        try {
+            setLoading(true);
+            const data = await listForms(resolveFormsOrgId(profile?.org_id));
+            setForms(data);
+        } catch (error: any) {
             toast({
                 title: "Error fetching forms",
                 description: error.message,
                 variant: "destructive",
             });
-        } else {
-            setForms(data || []);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleDelete = async (id: string) => {
@@ -66,20 +73,49 @@ export default function FormsListPage() {
             return;
         }
 
-        const { error } = await supabase.from("forms").delete().eq("id", id);
-
-        if (error) {
+        try {
+            setBusyFormId(id);
+            await deleteForm(id);
+            setForms((prev) => prev.filter((f) => f.id !== id));
+            toast({
+                title: "Form deleted",
+                description: "The form has been successfully deleted.",
+            });
+        } catch (error: any) {
             toast({
                 title: "Error deleting form",
                 description: error.message,
                 variant: "destructive",
             });
-        } else {
+        } finally {
+            setBusyFormId(null);
+        }
+    };
+
+    const handleToggleStatus = async (form: Form) => {
+        const nextActive = !form.is_active;
+        try {
+            setBusyFormId(form.id);
+            await updateFormActiveState(form.id, nextActive);
+            setForms((prev) =>
+                prev.map((entry) =>
+                    entry.id === form.id ? { ...entry, is_active: nextActive } : entry
+                )
+            );
             toast({
-                title: "Form deleted",
-                description: "The form has been successfully deleted.",
+                title: nextActive ? "Form activated" : "Form deactivated",
+                description: nextActive
+                    ? "This form is now accepting responses."
+                    : "This form is no longer accepting responses.",
             });
-            setForms(forms.filter((f) => f.id !== id));
+        } catch (error: any) {
+            toast({
+                title: "Unable to update form status",
+                description: error.message,
+                variant: "destructive",
+            });
+        } finally {
+            setBusyFormId(null);
         }
     };
 
@@ -181,8 +217,25 @@ export default function FormsListPage() {
                                                     QR Code
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
+                                                    onClick={() => handleToggleStatus(form)}
+                                                    disabled={busyFormId === form.id}
+                                                >
+                                                    {form.is_active ? (
+                                                        <>
+                                                            <Ban className="mr-2 h-4 w-4" />
+                                                            Disable
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                                                            Activate
+                                                        </>
+                                                    )}
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
                                                     className="text-destructive focus:text-destructive"
                                                     onClick={() => handleDelete(form.id)}
+                                                    disabled={busyFormId === form.id}
                                                 >
                                                     <Trash2 className="mr-2 h-4 w-4" />
                                                     Delete

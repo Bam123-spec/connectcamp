@@ -3,6 +3,7 @@ export type FormFieldType =
     | "long_text"
     | "number"
     | "dropdown"
+    | "checkbox"
     | "checkboxes"
     | "radio"
     | "file"
@@ -29,6 +30,7 @@ export interface FormField {
     description: string | null;
     options: string[] | null;
     order: number;
+    required?: boolean;
 }
 
 export interface FormWithFields extends Form {
@@ -46,7 +48,7 @@ export interface FormResponseAnswer {
     id: string;
     response_id: string;
     field_id: string;
-    answer: string | number | string[] | null;
+    answer: string | number | boolean | string[] | null;
 }
 
 export interface FormResponseWithAnswers extends FormResponse {
