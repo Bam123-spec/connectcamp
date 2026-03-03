@@ -51,7 +51,7 @@ function CreateEvent() {
       time,
       location,
       cover_image_url: coverImage,
-      approved: status === "approved",
+      approved: status === "approved" ? true : null,
     });
 
     setSaving(false);
