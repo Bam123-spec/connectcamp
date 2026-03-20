@@ -63,6 +63,14 @@ function AppLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || isLoginRoute) return;
+    window.localStorage.setItem(
+      SIDEBAR_COMPACT_STORAGE_KEY,
+      sidebarOpen ? "false" : "true",
+    );
+  }, [isLoginRoute, sidebarOpen]);
+
   return (
     <div
       className={cn(
@@ -81,7 +89,7 @@ function AppLayout() {
       <div
         className={cn(
           "flex-1 transition-all duration-300 ease-in-out",
-          !isLoginRoute && (sidebarOpen ? "md:pl-64" : "md:pl-16"),
+          !isLoginRoute && (sidebarOpen ? "md:pl-64" : "md:pl-20"),
         )}
       >
         {!isLoginRoute && <Topbar />}

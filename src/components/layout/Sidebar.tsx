@@ -47,6 +47,11 @@ export const accountLinks: SidebarLink[] = [
   { label: "Support", href: "/support", icon: HelpCircle },
 ];
 
+export function matchesSidebarPath(pathname: string, href: string) {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 interface SidebarProps {
   className?: string;
   open: boolean;
@@ -169,8 +174,7 @@ const Option = ({
     <NavLink
       to={href}
       className={({ isActive }) => {
-        // Custom active logic for nested routes
-        const isPathActive = isActive || (href !== "/" && location.pathname.startsWith(href));
+        const isPathActive = isActive || matchesSidebarPath(location.pathname, href);
 
         return cn(
           "group relative flex h-10 w-full items-center rounded-md px-3 transition-all duration-200",

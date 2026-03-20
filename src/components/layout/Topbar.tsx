@@ -11,8 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { primaryLinks, manageLinks, accountLinks } from "./Sidebar";
+import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { primaryLinks, manageLinks, accountLinks, matchesSidebarPath } from "./Sidebar";
 import type { SidebarLink } from "./Sidebar";
 import { useAuth } from "@/context/AuthContext";
 
@@ -32,11 +32,9 @@ function Topbar() {
   const navigate = useNavigate();
   const pathname = location.pathname;
   const allLinks = [...primaryLinks, ...manageLinks, ...accountLinks];
+  const sortedLinks = [...allLinks].sort((left, right) => right.href.length - left.href.length);
   const activePage =
-    allLinks.find((link) => {
-      if (link.href === "/") return pathname === "/";
-      return pathname.startsWith(link.href);
-    })?.label ??
+    sortedLinks.find((link) => matchesSidebarPath(pathname, link.href))?.label ??
     (pathname === "/login" ? "Login" : "Dashboard");
 
   const description =
@@ -79,21 +77,22 @@ function Topbar() {
                 </div>
                 <div className="flex flex-col gap-2">
                   {[...primaryLinks, ...manageLinks, ...accountLinks].map(({ label, href, icon: Icon }: SidebarLink) => (
-                    <NavLink
-                      key={href}
-                      to={href}
-                      className={({ isActive }) =>
-                        cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                          isActive
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                        )
-                      }
-                    >
-                      <Icon className="h-4 w-4" />
-                      {label}
-                    </NavLink>
+                    <SheetClose asChild key={href}>
+                      <NavLink
+                        to={href}
+                        className={({ isActive }) =>
+                          cn(
+                            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                            isActive || matchesSidebarPath(pathname, href)
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                          )
+                        }
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </NavLink>
+                    </SheetClose>
                   ))}
                 </div>
               </div>
