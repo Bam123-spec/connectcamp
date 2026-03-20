@@ -18,7 +18,7 @@ import type {
     DashboardEvent,
     PendingItem,
 } from "@/lib/supabaseDashboardApi";
-import { generateOllamaResponse } from "@/lib/ollamaApi";
+import { generateAIResponse } from "@/lib/aiChatApi";
 
 interface DashboardAIProps {
     stats: DashboardStats | null;
@@ -44,6 +44,12 @@ export function DashboardAI({
     const [query, setQuery] = useState("");
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+
+    const buildConversationContext = () =>
+        messages
+            .slice(-6)
+            .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+            .join("\n");
 
     const generateSnapshot = () => {
         if (!stats) return "No data available.";
@@ -92,10 +98,8 @@ export function DashboardAI({
         setIsLoading(true);
 
         try {
-            // Generate the snapshot
             const snapshot = generateSnapshot();
-
-            // Construct the full prompt
+            const conversationContext = buildConversationContext();
             const systemPrompt = `
 You are UniCentral Analytics AI, an assistant for campus administrators.
 
@@ -129,28 +133,16 @@ TONE:
 DATA CURRENTLY DISPLAYED:
 ${snapshot}
 
-USER QUESTION:
-${userMsg}
-
-ANALYSIS AND RESPONSE:
+RECENT CONVERSATION:
+${conversationContext || "No prior conversation."}
 `;
 
-            console.log("Sending prompt to Ollama...");
-
-            // Call Ollama API
-            // We try a few common models if the default fails, or just let the user know
-            let responseText = "";
-            try {
-                responseText = await generateOllamaResponse(systemPrompt, "llama3.2");
-            } catch (err) {
-                console.warn("Failed with llama3.2, trying deepseek-r1:1.5b...", err);
-                try {
-                    responseText = await generateOllamaResponse(systemPrompt, "deepseek-r1:1.5b");
-                } catch (retryErr) {
-                    console.error("All Ollama attempts failed:", retryErr);
-                    throw new Error("Could not connect to local AI. Is Ollama running?");
-                }
-            }
+            const responseText = await generateAIResponse({
+                systemInstruction: systemPrompt,
+                prompt: userMsg,
+                maxOutputTokens: 900,
+                temperature: 0.4,
+            });
 
             setMessages((prev) => [
                 ...prev,
@@ -162,7 +154,8 @@ ANALYSIS AND RESPONSE:
                 ...prev,
                 {
                     role: "assistant",
-                    content: "I couldn't connect to your local AI model. Please ensure Ollama is running with `OLLAMA_ORIGINS=\"*\" ollama serve`.",
+                    content:
+                        "The AI assistant is unavailable right now. Configure `GEMINI_API_KEY` in Vercel, or `VITE_GEMINI_API_KEY` for local `npm run dev`.",
                 },
             ]);
         } finally {
@@ -188,7 +181,7 @@ ANALYSIS AND RESPONSE:
                         Analytics Assistant
                     </SheetTitle>
                     <SheetDescription>
-                        Ask questions about your dashboard metrics and get AI-powered insights.
+                        Ask questions about your dashboard metrics and get Gemini-powered insights.
                     </SheetDescription>
                 </SheetHeader>
 

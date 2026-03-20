@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Bot, Send, X, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { generateOllamaResponse } from "@/lib/ollamaApi";
+import { generateAIResponse } from "@/lib/aiChatApi";
 import ReactMarkdown from "react-markdown";
 
 type Message = {
@@ -27,6 +27,13 @@ export function AnalyticsChatbot({ context }: { context: AnalyticsContext }) {
     const [loading, setLoading] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    const buildConversationContext = () =>
+        messages
+            .filter((message) => message.role !== "system")
+            .slice(-6)
+            .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+            .join("\n");
+
     useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -42,7 +49,6 @@ export function AnalyticsChatbot({ context }: { context: AnalyticsContext }) {
         setLoading(true);
 
         try {
-            // Construct system prompt with context
             const systemPrompt = `You are an expert data analyst for the Connect Camp Student Life Admin Dashboard. 
             
             You have access to the following current analytics data:
@@ -69,33 +75,26 @@ export function AnalyticsChatbot({ context }: { context: AnalyticsContext }) {
             FORMATTING:
             - Use **Markdown** (bold, bullet points).
             - Keep the total response under 100 words.
-            
-            USER QUESTION:
-            ${input}
             `;
+            const responseText = await generateAIResponse({
+                systemInstruction: `${systemPrompt}
 
-            console.log("Sending prompt to Ollama...");
-
-            // Call Ollama API
-            let responseText = "";
-            try {
-                responseText = await generateOllamaResponse(systemPrompt, "llama3.2");
-            } catch (err) {
-                console.warn("Failed with llama3.2, trying deepseek-r1:1.5b...", err);
-                try {
-                    responseText = await generateOllamaResponse(systemPrompt, "deepseek-r1:1.5b");
-                } catch (retryErr) {
-                    console.error("All Ollama attempts failed:", retryErr);
-                    throw new Error("Could not connect to local AI. Is Ollama running?");
-                }
-            }
+RECENT CONVERSATION:
+${buildConversationContext() || "No prior conversation."}`,
+                prompt: input,
+                maxOutputTokens: 400,
+                temperature: 0.35,
+            });
 
             setMessages(prev => [...prev, { role: "assistant", content: responseText }]);
 
         } catch (error) {
             console.error("Chatbot error:", error);
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            setMessages(prev => [...prev, { role: "assistant", content: `Error: ${errorMessage}. Please check your connection.` }]);
+            setMessages(prev => [...prev, {
+                role: "assistant",
+                content:
+                    "The AI assistant is unavailable right now. Configure `GEMINI_API_KEY` in Vercel, or `VITE_GEMINI_API_KEY` for local `npm run dev`.",
+            }]);
         } finally {
             setLoading(false);
         }
@@ -112,7 +111,7 @@ export function AnalyticsChatbot({ context }: { context: AnalyticsContext }) {
                             </div>
                             <div>
                                 <CardTitle className="text-sm font-medium">Analytics AI</CardTitle>
-                                <p className="text-xs text-slate-400">Powered by Local LLM</p>
+                                <p className="text-xs text-slate-400">Powered by Gemini Flash Lite</p>
                             </div>
                         </div>
                         <Button
