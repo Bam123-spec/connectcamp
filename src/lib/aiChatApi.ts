@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = "gemini-2.0-flash-lite-001";
+const DEFAULT_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_TEMPERATURE = 0.4;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 const SERVER_ENDPOINT = "/api/ai-chat";

@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash-lite-001";
+const DEFAULT_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash-lite";
 
 type RequestBody = {
   prompt?: string;
@@ -116,4 +116,3 @@ function extractText(payload: GeminiResponse | null) {
       .trim() || null
   );
 }
-
