@@ -4,12 +4,10 @@ import {
   MESSAGE_PAGE_SIZE,
   type ConversationMessage,
   type ConversationSummary,
-  type MessagingBackend,
   type MessagingProfile,
   type TargetType,
   fetchConversationMessages,
   fetchConversationSummaries,
-  getMessagingBackend,
   getOrCreateConversation,
   markConversationRead,
   resolveOrgId,
@@ -43,7 +41,6 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
 
   const [sendingMessage, setSendingMessage] = useState(false);
   const [creatingConversation, setCreatingConversation] = useState(false);
-  const [backend, setBackend] = useState<MessagingBackend>("modern");
 
   const orgId = useMemo(() => resolveOrgId(profile), [profile]);
 
@@ -233,21 +230,7 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
   );
 
   useEffect(() => {
-    let mounted = true;
-    getMessagingBackend().then((value) => {
-      if (mounted) setBackend(value);
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
     if (!userId || !orgId) return;
-
-    const messageTable = backend === "legacy" ? "chat_messages" : "messages";
-    const conversationTable = backend === "legacy" ? "chat_rooms" : "conversations";
-    const filter = backend === "legacy" ? undefined : `org_id=eq.${orgId}`;
 
     const channel = supabase
       .channel(`messaging-${orgId}-${userId}`)
@@ -256,91 +239,54 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
         {
           event: "INSERT",
           schema: "public",
-          table: messageTable,
-          filter,
+          table: "admin_messages",
+          filter: `org_id=eq.${orgId}`,
         },
         async (payload) => {
-          let conversationId = "";
-          let body = "";
-          let createdAt = "";
-          let senderId = "";
-          let senderType: "admin" | "club" | "officer" | "other" = "other";
-          let payloadOrgId = orgId;
-          let messageId = "";
-
-          if (backend === "legacy") {
-            const inserted = payload.new as {
-              id: string;
-              room_id: string;
-              sender_id: string;
-              content: string;
-              created_at: string;
-            };
-
-            messageId = inserted.id;
-            conversationId = inserted.room_id;
-            body = inserted.content;
-            createdAt = inserted.created_at;
-            senderId = inserted.sender_id;
-            senderType = "other";
-            payloadOrgId = orgId;
-          } else {
-            const inserted = payload.new as {
-              id: string;
-              conversation_id: string;
-              org_id: string;
-              sender_id: string;
-              sender_type: "admin" | "club" | "officer" | "other";
-              body: string;
-              created_at: string;
-            };
-
-            messageId = inserted.id;
-            conversationId = inserted.conversation_id;
-            body = inserted.body;
-            createdAt = inserted.created_at;
-            senderId = inserted.sender_id;
-            senderType = inserted.sender_type;
-            payloadOrgId = inserted.org_id;
-          }
+          const inserted = payload.new as {
+            id: string;
+            conversation_id: string;
+            org_id: string;
+            sender_id: string;
+            sender_role: "admin" | "club";
+            body: string;
+            created_at: string;
+          };
 
           let conversationExists = false;
 
           setConversations((prev) => {
-            const target = prev.find((conversation) => conversation.id === conversationId);
+            const target = prev.find((conversation) => conversation.id === inserted.conversation_id);
             if (!target) return prev;
 
             conversationExists = true;
-            const isActive = selectedConversationIdRef.current === conversationId;
-            const unreadCount =
-              isActive || senderId === userId
-                ? 0
-                : target.unreadCount + 1;
+            const isActive = selectedConversationIdRef.current === inserted.conversation_id;
+            const unreadCount = isActive || inserted.sender_id === userId ? 0 : target.unreadCount + 1;
 
             const updated: ConversationSummary = {
               ...target,
-              preview: normalizePreview(body),
-              lastMessageAt: createdAt,
-              updatedAt: createdAt,
+              preview: normalizePreview(inserted.body),
+              lastMessageAt: inserted.created_at,
+              updatedAt: inserted.created_at,
               unreadCount,
             };
 
-            return [updated, ...prev.filter((conversation) => conversation.id !== conversationId)];
+            return [updated, ...prev.filter((conversation) => conversation.id !== inserted.conversation_id)];
           });
 
           if (!conversationExists) {
             await refreshConversations();
           }
 
-          if (selectedConversationIdRef.current === conversationId) {
+          if (selectedConversationIdRef.current === inserted.conversation_id) {
             const message: ConversationMessage = {
-              id: messageId,
-              conversationId,
-              orgId: payloadOrgId,
-              senderId,
-              senderType,
-              body,
-              createdAt,
+              id: inserted.id,
+              conversationId: inserted.conversation_id,
+              orgId: inserted.org_id,
+              senderId: inserted.sender_id,
+              senderType: inserted.sender_role,
+              body: inserted.body,
+              createdAt: inserted.created_at,
             };
 
             setMessages((prev) => {
@@ -348,7 +294,7 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
               return [...prev, message];
             });
 
-            await markSelectedConversationRead(conversationId);
+            await markSelectedConversationRead(inserted.conversation_id);
           }
         },
       )
@@ -357,8 +303,8 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
         {
           event: "UPDATE",
           schema: "public",
-          table: conversationTable,
-          filter,
+          table: "admin_conversations",
+          filter: `org_id=eq.${orgId}`,
         },
         async () => {
           await refreshConversations();
@@ -369,7 +315,7 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
     return () => {
       channel.unsubscribe();
     };
-  }, [backend, markSelectedConversationRead, orgId, refreshConversations, userId]);
+  }, [markSelectedConversationRead, orgId, refreshConversations, userId]);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
