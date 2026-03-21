@@ -84,16 +84,23 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.88),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.28),transparent_24%)]" />
         <TitleSection open={open} />
         <div className="relative min-h-0 flex-1 overflow-y-auto">
-          <div className="mb-4 space-y-1">
-            {primaryLinks.map((link) => (
-              <Option
-                key={link.href}
-                Icon={link.icon}
-                title={link.label}
-                href={link.href}
-                open={open}
-              />
-            ))}
+          <div className="mb-4 rounded-[22px] border border-slate-200/90 bg-white/80 p-2 shadow-[0_8px_20px_rgba(148,163,184,0.05)]">
+            {open && (
+              <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+                Workspace
+              </div>
+            )}
+            <div className="space-y-1">
+              {primaryLinks.map((link) => (
+                <Option
+                  key={link.href}
+                  Icon={link.icon}
+                  title={link.label}
+                  href={link.href}
+                  open={open}
+                />
+              ))}
+            </div>
           </div>
 
           <div className="space-y-4 border-t border-slate-200/80 pt-4">
