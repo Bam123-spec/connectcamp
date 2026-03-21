@@ -10,6 +10,7 @@ import ManageClubsPage from "./pages/ManageClubsPage";
 import Tasks from "./pages/Tasks";
 import Messaging from "./pages/Messaging";
 import Officers from "./pages/Officers";
+import Prospects from "./pages/Prospects";
 import Settings from "./pages/Settings";
 import Support from "./pages/Support";
 import Sidebar from "./components/layout/Sidebar";
@@ -145,6 +146,14 @@ function AppLayout() {
               element={
                 <ProtectedRoute>
                   <Events />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/prospects"
+              element={
+                <ProtectedRoute>
+                  <Prospects />
                 </ProtectedRoute>
               }
             />

@@ -18,7 +18,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TimePicker } from "@/components/ui/time-picker";
@@ -102,10 +101,9 @@ type CreateClubForm = {
   time: string;
   location: string;
   email: string;
-  approved: boolean;
 };
 
-type FilterKey = "all" | "attention" | "prospects" | "officers" | "messaging" | "tasks";
+type FilterKey = "all" | "attention" | "officers" | "messaging" | "tasks";
 
 const initialCreateClubState: CreateClubForm = {
   name: "",
@@ -113,7 +111,6 @@ const initialCreateClubState: CreateClubForm = {
   time: "",
   location: "",
   email: "",
-  approved: true,
 };
 
 const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
@@ -122,7 +119,6 @@ const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
   { key: "officers", label: "No officers" },
   { key: "messaging", label: "Chat setup needed" },
   { key: "tasks", label: "Open tasks" },
-  { key: "prospects", label: "Prospects" },
 ];
 
 function parseStoredDate(day: string | null) {
@@ -353,7 +349,6 @@ function Clubs() {
       time: club.time || "",
       location: club.location || "",
       email: club.email || "",
-      approved: club.approved ?? true,
     });
     setDate(parseStoredDate(club.day));
     setLogoUrl(club.cover_image_url || "");
@@ -385,7 +380,7 @@ function Clubs() {
         location: createForm.location.trim() || null,
         cover_image_url: logoUrl || null,
         email: createForm.email.trim() || null,
-        approved: createForm.approved,
+        approved: true,
       };
 
       let submitError: { message?: string } | null = null;
@@ -429,12 +424,11 @@ function Clubs() {
   const summary = useMemo(() => {
     const total = clubs.length;
     const approved = clubs.filter((club) => club.approved).length;
-    const prospects = clubs.filter((club) => !club.approved).length;
     const messagingReady = clubs.filter((club) => club.messagingReady).length;
     const withOfficers = clubs.filter((club) => club.officerCount > 0).length;
     const openTasks = clubs.reduce((sum, club) => sum + club.openTaskCount, 0);
     const needsAttention = clubs.filter((club) => club.health !== "strong").length;
-    return { total, approved, prospects, messagingReady, withOfficers, openTasks, needsAttention };
+    return { total, approved, messagingReady, withOfficers, openTasks, needsAttention };
   }, [clubs]);
 
   const filteredClubs = useMemo(() => {
@@ -449,8 +443,6 @@ function Clubs() {
       switch (activeFilter) {
         case "attention":
           return club.health !== "strong";
-        case "prospects":
-          return !club.approved;
         case "officers":
           return club.officerCount === 0;
         case "messaging":
@@ -464,7 +456,6 @@ function Clubs() {
   }, [activeFilter, clubs, searchQuery]);
 
   const attentionClubs = useMemo(() => clubs.filter((club) => club.health !== "strong").slice(0, 6), [clubs]);
-  const prospectClubs = useMemo(() => clubs.filter((club) => !club.approved).slice(0, 5), [clubs]);
   const messagingGaps = useMemo(() => clubs.filter((club) => !club.messagingReady).slice(0, 6), [clubs]);
 
   const content = () => {
@@ -534,7 +525,7 @@ function Clubs() {
               <p className="text-sm text-muted-foreground">
                 {editingClub
                   ? "Update the details, coverage state, and contact information for this club."
-                  : "Add a new club or prospect into the workspace with proper org-scoped metadata."}
+                  : "Add a new official club into the workspace with proper org-scoped metadata."}
               </p>
             </SheetHeader>
             <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
@@ -594,15 +585,6 @@ function Clubs() {
                   onChange={(event) => setCreateForm((prev) => ({ ...prev, location: event.target.value }))}
                   placeholder="Student Center, Room 203"
                 />
-              </div>
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">Approved / official club</p>
-                    <p className="mt-1 text-sm text-slate-500">Turn this off to keep the club in the prospects pipeline until Student Life approves it.</p>
-                  </div>
-                  <Switch checked={createForm.approved} onCheckedChange={(checked) => setCreateForm((prev) => ({ ...prev, approved: checked }))} />
-                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Cover image</label>
@@ -709,17 +691,6 @@ function Clubs() {
             actionLabel="Open Messaging"
           />
 
-          <SideListCard
-            title="Prospects queue"
-            description="Clubs still pending approval or formal onboarding."
-            emptyLabel="No prospect clubs are waiting right now."
-            items={prospectClubs.map((club) => ({
-              id: club.id,
-              label: club.name,
-              helper: club.email || "No club contact email on file",
-              tone: "watch",
-            }))}
-          />
         </div>
       </div>
     </div>

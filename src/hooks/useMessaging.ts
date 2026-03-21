@@ -27,11 +27,15 @@ const normalizePreview = (value: string) => {
 };
 
 export function useMessaging({ userId, profile }: UseMessagingParams) {
+  const initialFocusedConversation =
+    typeof window !== "undefined"
+      ? window.localStorage.getItem("cc.messaging.focusConversation")
+      : null;
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
 
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(initialFocusedConversation);
 
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -66,7 +70,17 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
 
       setConversations(data);
 
-      if (!selectedConversationIdRef.current && data.length > 0) {
+      const focusedConversationId =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("cc.messaging.focusConversation")
+          : null;
+
+      if (focusedConversationId && data.some((conversation) => conversation.id === focusedConversationId)) {
+        setSelectedConversationId(focusedConversationId);
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem("cc.messaging.focusConversation");
+        }
+      } else if (!selectedConversationIdRef.current && data.length > 0) {
         setSelectedConversationId(data[0].id);
       }
 

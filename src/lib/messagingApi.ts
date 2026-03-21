@@ -6,7 +6,7 @@ const EPOCH_ISO = "1970-01-01T00:00:00.000Z";
 const ADMIN_ROLES = ["admin", "student_life_admin", "super_admin"];
 
 export type ConversationCategory = "clubs" | "admins" | "prospects";
-export type TargetType = "club" | "admin";
+export type TargetType = "club" | "admin" | "prospect";
 export type MemberType = "admin" | "club";
 export type MessagingBackend = "dedicated";
 
@@ -91,6 +91,7 @@ type AdminConversationRow = {
   org_id: string;
   type: string;
   club_id: string | null;
+  prospect_id: string | null;
   updated_at: string;
   last_message_at: string | null;
   subject: string | null;
@@ -136,6 +137,23 @@ type ClubRow = {
   approved?: boolean | null;
   org_id?: string | null;
   primary_user_id?: string | null;
+};
+
+type ProspectRow = {
+  id: string;
+  name: string;
+  cover_image_url?: string | null;
+  status?: string | null;
+};
+
+const STAGE_TO_SUBTITLE: Record<string, string> = {
+  new: "New prospect",
+  reviewing: "Under review",
+  needs_documents: "Needs documents",
+  meeting_scheduled: "Meeting scheduled",
+  approved: "Approved prospect",
+  rejected: "Rejected prospect",
+  converted: "Converted prospect",
 };
 
 function normalizePreview(value: string | null | undefined) {
@@ -256,7 +274,7 @@ export async function fetchConversationSummaries(params: {
   const [conversationsResult, membersResult, latestMessagesResult, unreadCounts] = await Promise.all([
     supabase
       .from("admin_conversations")
-      .select("id, org_id, type, club_id, updated_at, last_message_at, subject")
+      .select("id, org_id, type, club_id, prospect_id, updated_at, last_message_at, subject")
       .in("id", conversationIds)
       .eq("org_id", orgId)
       .order("last_message_at", { ascending: false, nullsFirst: false })
@@ -309,24 +327,35 @@ export async function fetchConversationSummaries(params: {
       ].filter((value): value is string => Boolean(value)),
     ),
   );
+  const prospectIds = Array.from(
+    new Set(
+      conversations.map((row) => row.prospect_id).filter((value): value is string => Boolean(value)),
+    ),
+  );
 
-  const [profilesResult, clubsResult] = await Promise.all([
+  const [profilesResult, clubsResult, prospectsResult] = await Promise.all([
     profileIds.length > 0
       ? supabase.from("profiles").select("id, full_name, email, avatar_url, role, club_id").in("id", profileIds)
       : Promise.resolve({ data: [] as ProfileRow[], error: null }),
     clubIds.length > 0
       ? supabase.from("clubs").select("id, name, cover_image_url, approved").in("id", clubIds)
       : Promise.resolve({ data: [] as ClubRow[], error: null }),
+    prospectIds.length > 0
+      ? supabase.from("prospect_clubs").select("id, name, cover_image_url, status").in("id", prospectIds)
+      : Promise.resolve({ data: [] as ProspectRow[], error: null }),
   ]);
 
   if (profilesResult.error) throw profilesResult.error;
   if (clubsResult.error) throw clubsResult.error;
+  if (prospectsResult.error) throw prospectsResult.error;
 
   const profilesMap = new Map<string, ProfileRow>();
   ((profilesResult.data ?? []) as ProfileRow[]).forEach((row) => profilesMap.set(row.id, row));
 
   const clubsMap = new Map<string, ClubRow>();
   ((clubsResult.data ?? []) as ClubRow[]).forEach((row) => clubsMap.set(row.id, row));
+  const prospectsMap = new Map<string, ProspectRow>();
+  ((prospectsResult.data ?? []) as ProspectRow[]).forEach((row) => prospectsMap.set(row.id, row));
 
   const term = search.trim().toLowerCase();
 
@@ -338,6 +367,7 @@ export async function fetchConversationSummaries(params: {
       conversation.club_id ??
       members.find((member) => member.role === "club" && member.club_id)?.club_id ??
       null;
+    const targetProspectId = conversation.prospect_id ?? null;
     const latest = latestByConversation.get(conversation.id);
 
     let category: ConversationCategory = "admins";
@@ -346,9 +376,16 @@ export async function fetchConversationSummaries(params: {
     let title = conversation.subject?.trim() || "Admin chat";
     let avatarUrl: string | null = null;
 
-    if (targetClubId) {
+    if (targetProspectId || conversation.type === "prospect") {
+      const prospect = targetProspectId ? prospectsMap.get(targetProspectId) : null;
+      category = "prospects";
+      targetType = "prospect";
+      targetId = targetProspectId ?? conversation.id;
+      title = prospect?.name ?? conversation.subject?.trim() ?? "Prospect pipeline";
+      avatarUrl = prospect?.cover_image_url ?? null;
+    } else if (targetClubId) {
       const club = clubsMap.get(targetClubId);
-      category = club?.approved === false ? "prospects" : "clubs";
+      category = "clubs";
       targetType = "club";
       targetId = targetClubId;
       title = club?.name ?? conversation.subject?.trim() ?? "Club chat";
@@ -378,6 +415,8 @@ export async function fetchConversationSummaries(params: {
       preview:
         !latest?.body && targetClubId && clubMemberCount === 0
           ? "No club-side account is linked yet. Add access before expecting replies."
+          : !latest?.body && targetProspectId
+            ? "Internal prospect thread ready. Add notes, requirements, and next steps here."
           : normalizePreview(latest?.body),
       unreadCount: unreadCounts.get(conversation.id) ?? 0,
       adminMemberCount,
@@ -503,26 +542,46 @@ export async function fetchRecipientOptions(params: {
   const term = search.trim().toLowerCase();
 
   if (tab === "club" || tab === "prospect") {
-    const wantsApproved = tab === "club";
-    let query = supabase
-      .from("clubs")
-      .select("id, name, cover_image_url, approved, org_id")
-      .eq("approved", wantsApproved)
+    if (tab === "club") {
+      const clubsResult = await supabase
+        .from("clubs")
+        .select("id, name, cover_image_url, approved, org_id")
+        .eq("approved", true)
+        .eq("org_id", orgId)
+        .order("name", { ascending: true });
+
+      if (clubsResult.error) throw clubsResult.error;
+
+      return ((clubsResult.data ?? []) as ClubRow[])
+        .filter((club) => (term ? club.name.toLowerCase().includes(term) : true))
+        .map((club) => ({
+          key: club.id,
+          targetType: "club",
+          targetId: club.id,
+          label: club.name,
+          subtitle: "Official club",
+          avatarUrl: club.cover_image_url ?? null,
+        } satisfies RecipientOption));
+    }
+
+    const prospectsResult = await supabase
+      .from("prospect_clubs")
+      .select("id, name, cover_image_url, status, org_id")
       .eq("org_id", orgId)
+      .in("status", ["new", "reviewing", "needs_documents", "meeting_scheduled", "approved"])
       .order("name", { ascending: true });
 
-    const clubsResult = await query;
-    if (clubsResult.error) throw clubsResult.error;
+    if (prospectsResult.error) throw prospectsResult.error;
 
-    return ((clubsResult.data ?? []) as ClubRow[])
-      .filter((club) => (term ? club.name.toLowerCase().includes(term) : true))
-      .map((club) => ({
-        key: club.id,
-        targetType: "club",
-        targetId: club.id,
-        label: club.name,
-        subtitle: wantsApproved ? "Official club" : "Prospect club",
-        avatarUrl: club.cover_image_url ?? null,
+    return ((prospectsResult.data ?? []) as ProspectRow[])
+      .filter((prospect) => (term ? prospect.name.toLowerCase().includes(term) : true))
+      .map((prospect) => ({
+        key: prospect.id,
+        targetType: "prospect",
+        targetId: prospect.id,
+        label: prospect.name,
+        subtitle: STAGE_TO_SUBTITLE[prospect.status ?? "new"] ?? "Prospect pipeline",
+        avatarUrl: prospect.cover_image_url ?? null,
       } satisfies RecipientOption));
   }
 
@@ -561,6 +620,15 @@ export async function getOrCreateConversation(params: {
   if (params.targetType === "club") {
     const result = await supabase.rpc("ensure_admin_club_conversation", {
       target_club_id: params.targetId,
+    });
+
+    if (result.error) throw result.error;
+    return result.data as string;
+  }
+
+  if (params.targetType === "prospect") {
+    const result = await supabase.rpc("ensure_prospect_conversation", {
+      target_prospect_id: params.targetId,
     });
 
     if (result.error) throw result.error;

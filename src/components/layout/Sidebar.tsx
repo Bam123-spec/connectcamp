@@ -12,6 +12,7 @@ import {
   ClipboardCheck,
   MessageSquare,
   UserPlus,
+  Lightbulb,
   BarChart3,
   ClipboardList,
   type LucideIcon,
@@ -28,6 +29,7 @@ export type SidebarLink = {
 export const primaryLinks: SidebarLink[] = [
   { label: "Dashboard", href: "/", icon: Home },
   { label: "Clubs", href: "/clubs", icon: Building2 },
+  { label: "Prospects", href: "/prospects", icon: Lightbulb },
   { label: "Events", href: "/events", icon: CalendarDays },
 ];
 
