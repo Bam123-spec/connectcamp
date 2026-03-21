@@ -42,19 +42,24 @@ export type PendingItem = {
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-    const [clubs, events, profiles] = await Promise.all([
+    await supabase.rpc("sync_approval_requests");
+
+    const [clubs, events, profiles, approvals] = await Promise.all([
         supabase.from("clubs").select("id, approved, member_count"),
         supabase.from("events").select("id, approved"),
         supabase.from("profiles").select("id, role, officer_title"),
+        supabase.from("approval_requests").select("id, queue, status"),
     ]);
 
     if (clubs.error) throw clubs.error;
     if (events.error) throw events.error;
     if (profiles.error) throw profiles.error;
+    if (approvals.error) throw approvals.error;
 
     const clubData = clubs.data ?? [];
     const eventData = events.data ?? [];
     const profileData = profiles.data ?? [];
+    const approvalData = approvals.data ?? [];
 
     const totalMembers = clubData.reduce((sum, club) => sum + (club.member_count ?? 0), 0);
     const officerProfiles = profileData.filter((p) => {
@@ -68,7 +73,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         approvedClubs: clubData.filter((c) => c.approved !== false).length,
         totalMembers,
         upcomingEvents: eventData.length,
-        pendingEvents: eventData.filter((e) => e.approved === false).length,
+        pendingEvents: approvalData.filter((item) => item.queue === "events" && ["pending_review", "in_review", "changes_requested"].includes(item.status)).length,
         officerAccounts: officerProfiles.length,
         totalProfiles: profileData.length,
     };
@@ -152,39 +157,32 @@ export async function getRecentEvents(): Promise<DashboardEvent[]> {
 }
 
 export async function getPendingApprovals(): Promise<PendingItem[]> {
-    const [clubs, events] = await Promise.all([
-        supabase
-            .from("clubs")
-            .select("id, name, location, created_at")
-            .eq("approved", false)
-            .limit(5),
-        supabase
-            .from("events")
-            .select("id, name, location, created_at")
-            .eq("approved", false)
-            .limit(5),
-    ]);
+    await supabase.rpc("sync_approval_requests");
 
-    if (clubs.error) throw clubs.error;
-    if (events.error) throw events.error;
+    const { data, error } = await supabase
+        .from("approval_requests")
+        .select("id, title, queue, status, last_action_at, metadata, assigned_to")
+        .in("status", ["pending_review", "in_review", "changes_requested"])
+        .order("last_action_at", { ascending: false })
+        .limit(5);
 
-    const pendingClubs: PendingItem[] = (clubs.data ?? []).map((c) => ({
-        id: c.id,
-        name: c.name,
-        owner: c.location ?? "Club",
-        type: "Club approval",
-        created_at: c.created_at ?? new Date().toISOString(),
-    }));
+    if (error) throw error;
 
-    const pendingEvents: PendingItem[] = (events.data ?? []).map((e) => ({
-        id: e.id,
-        name: e.name,
-        owner: e.location ?? "Event",
-        type: "Event approval",
-        created_at: e.created_at ?? new Date().toISOString(),
-    }));
+    return ((data ?? []) as Array<{ id: string; title: string; queue: "clubs" | "events" | "budgets"; status: string; last_action_at: string | null; metadata: Record<string, unknown> | null; assigned_to: string | null }>).map((item) => {
+        const metadata = (item.metadata ?? {}) as Record<string, unknown>;
+        const owner =
+            item.assigned_to
+                ? "Assigned"
+                : item.queue === "clubs"
+                    ? (typeof metadata.location === "string" ? metadata.location : "Club review")
+                    : (typeof metadata.club_name === "string" ? metadata.club_name : "Event review");
 
-    return [...pendingClubs, ...pendingEvents]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 5);
+        return {
+            id: item.id,
+            name: item.title,
+            owner,
+            type: item.queue === "clubs" ? "Club approval" : "Event approval",
+            created_at: item.last_action_at ?? new Date().toISOString(),
+        } satisfies PendingItem;
+    });
 }

@@ -36,7 +36,7 @@ export const manageLinks: SidebarLink[] = [
   { label: "User Management", href: "/users", icon: UserCog },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Forms", href: "/forms", icon: ClipboardList },
-  { label: "Pending Approvals", href: "/approvals", icon: ClipboardCheck },
+  { label: "Approvals", href: "/approvals", icon: ClipboardCheck },
   { label: "Tasks", href: "/tasks", icon: ClipboardList },
   { label: "Messaging", href: "/messaging", icon: MessageSquare },
   { label: "Officers", href: "/officers", icon: Users },

@@ -18,8 +18,8 @@ export function PendingApprovalsCard({ items, loading }: PendingApprovalsCardPro
 
     return (
         <SectionCard
-            title="Pending Approvals"
-            subtitle="Items requiring attention"
+            title="Approvals Queue"
+            subtitle="Active review work"
             className="h-full"
         >
             {items.length === 0 ? (
@@ -29,7 +29,7 @@ export function PendingApprovalsCard({ items, loading }: PendingApprovalsCardPro
                     </div>
                     <div className="space-y-1">
                         <p className="font-medium text-gray-900">All caught up!</p>
-                        <p className="text-sm text-gray-500">No pending items to review.</p>
+                        <p className="text-sm text-gray-500">No active approvals to review.</p>
                     </div>
                 </div>
             ) : (
@@ -56,7 +56,7 @@ export function PendingApprovalsCard({ items, loading }: PendingApprovalsCardPro
                     ))}
                     <Button variant="ghost" className="w-full text-xs text-gray-500 hover:text-gray-900" asChild>
                         <Link to="/approvals" className="flex items-center justify-center gap-1">
-                            View All Pending <ChevronRight className="h-3 w-3" />
+                            Open Queue <ChevronRight className="h-3 w-3" />
                         </Link>
                     </Button>
                 </div>
