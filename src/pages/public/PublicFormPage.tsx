@@ -172,16 +172,19 @@ export default function PublicFormPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4">
+        <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 shadow-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading form...
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 p-4">
-        <Card className="w-full max-w-md text-center">
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] p-4">
+        <Card className="w-full max-w-md border-slate-200 text-center shadow-sm">
           <CardHeader>
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
               <AlertCircle className="h-6 w-6 text-red-600" />
@@ -196,8 +199,8 @@ export default function PublicFormPage() {
 
   if (submitted) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 p-4">
-        <Card className="w-full max-w-md text-center">
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] p-4">
+        <Card className="w-full max-w-md border-slate-200 text-center shadow-sm">
           <CardHeader>
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
               <CheckCircle2 className="h-6 w-6 text-green-600" />
@@ -211,20 +214,31 @@ export default function PublicFormPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-6">
-      <div className="mx-auto max-w-2xl space-y-6">
-        <Card>
-          <CardHeader className="border-b bg-white">
-            <CardTitle className="text-2xl">{form?.title}</CardTitle>
-            {form?.description && (
-              <CardDescription className="mt-2 text-base">{form.description}</CardDescription>
-            )}
-          </CardHeader>
-        </Card>
+    <div className="min-h-screen bg-[#f5f7fb] px-4 py-8 sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div className="space-y-3">
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.24em] text-slate-500 shadow-sm">
+            Connect Camp Form
+          </span>
+          <Card className="overflow-hidden border-slate-200 shadow-sm">
+            <div className="h-3 bg-slate-950" />
+            <CardHeader className="bg-white">
+              <CardTitle className="text-3xl tracking-tight text-slate-950">{form?.title}</CardTitle>
+              {form?.description && (
+                <CardDescription className="mt-2 max-w-2xl text-base leading-7 text-slate-600">
+                  {form.description}
+                </CardDescription>
+              )}
+              <div className="pt-3 text-sm text-slate-500">
+                Fields marked with <span className="font-semibold text-red-600">*</span> are required.
+              </div>
+            </CardHeader>
+          </Card>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {submitError && (
-            <Card className="border-red-200 bg-red-50">
+            <Card className="border-red-200 bg-red-50 shadow-sm">
               <CardContent className="pt-4 text-sm text-red-700">{submitError}</CardContent>
             </Card>
           )}
@@ -232,18 +246,18 @@ export default function PublicFormPage() {
           {fields.map((field) => {
             if (field.type === "section") {
               return (
-                <div key={field.id} className="pt-4">
-                  <h3 className="text-lg font-semibold text-gray-900">{field.label}</h3>
-                  {field.description && <p className="text-sm text-gray-500">{field.description}</p>}
+                <div key={field.id} className="px-1 pt-4">
+                  <h3 className="text-lg font-semibold text-slate-950">{field.label}</h3>
+                  {field.description && <p className="text-sm text-slate-500">{field.description}</p>}
                 </div>
               );
             }
 
             return (
-              <Card key={field.id}>
+              <Card key={field.id} className="border-slate-200 shadow-sm">
                 <CardContent className="pt-6">
                   <div className="space-y-3">
-                    <Label className="text-base font-medium">
+                    <Label className="text-base font-medium text-slate-950">
                       {field.label}
                       {field.required && <span className="ml-1 text-red-600">*</span>}
                     </Label>
@@ -347,6 +361,7 @@ export default function PublicFormPage() {
                       <div className="space-y-2">
                         <Input
                           type="file"
+                          className="bg-white"
                           onChange={(event) => {
                             const file = event.target.files?.[0];
                             if (file) {
@@ -379,12 +394,21 @@ export default function PublicFormPage() {
           })}
 
           <div className="flex justify-end pt-4">
-            <Button size="lg" type="submit" disabled={submitting || uploadingCount > 0}>
+            <Button
+              size="lg"
+              type="submit"
+              disabled={submitting || uploadingCount > 0}
+              className="min-w-[180px] bg-slate-950 hover:bg-slate-800"
+            >
               {(submitting || uploadingCount > 0) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {uploadingCount > 0 ? "Finishing uploads..." : "Submit Response"}
             </Button>
           </div>
         </form>
+
+        <p className="pb-4 text-center text-sm text-slate-500">
+          This form is powered by Connect Camp. Responses are submitted directly to the organization that shared it with you.
+        </p>
       </div>
     </div>
   );

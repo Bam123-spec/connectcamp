@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, matchPath } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Clubs from "./pages/Clubs";
@@ -47,6 +47,10 @@ function App() {
 function AppLayout() {
   const location = useLocation();
   const isLoginRoute = location.pathname === "/login";
+  const isPublicFormRoute = Boolean(
+    matchPath("/form-fill/:formId", location.pathname),
+  );
+  const showAppChrome = !isLoginRoute && !isPublicFormRoute;
   const [sidebarOpen, setSidebarOpen] = useState(getInitialSidebarOpen);
 
   useEffect(() => {
@@ -64,21 +68,21 @@ function AppLayout() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || isLoginRoute) return;
+    if (typeof window === "undefined" || !showAppChrome) return;
     window.localStorage.setItem(
       SIDEBAR_COMPACT_STORAGE_KEY,
       sidebarOpen ? "false" : "true",
     );
-  }, [isLoginRoute, sidebarOpen]);
+  }, [showAppChrome, sidebarOpen]);
 
   return (
     <div
       className={cn(
         "flex min-h-screen bg-muted/20",
-        isLoginRoute ? "flex-col" : "flex-col md:flex-row",
+        !showAppChrome ? "flex-col" : "flex-col md:flex-row",
       )}
     >
-      {!isLoginRoute && (
+      {showAppChrome && (
         <Sidebar
           open={sidebarOpen}
           setOpen={setSidebarOpen}
@@ -89,15 +93,17 @@ function AppLayout() {
       <div
         className={cn(
           "flex-1 transition-all duration-300 ease-in-out",
-          !isLoginRoute && (sidebarOpen ? "md:pl-64" : "md:pl-20"),
+          showAppChrome && (sidebarOpen ? "md:pl-64" : "md:pl-20"),
         )}
       >
-        {!isLoginRoute && <Topbar />}
+        {showAppChrome && <Topbar />}
         <main
           className={cn(
-            "h-[calc(100vh-4rem)] overflow-y-auto px-4 pb-10 pt-4 sm:px-6 lg:px-8",
+            "overflow-y-auto",
+            showAppChrome && "h-[calc(100vh-4rem)] px-4 pb-10 pt-4 sm:px-6 lg:px-8",
             isLoginRoute &&
-            "flex min-h-screen items-center justify-center bg-background px-4",
+              "flex min-h-screen items-center justify-center bg-background px-4",
+            isPublicFormRoute && "min-h-screen",
           )}
         >
           <Routes>
