@@ -89,6 +89,7 @@ grant execute on function public.log_audit_event(uuid, text, text, text, uuid, t
 
 revoke all on public.audit_events from anon;
 revoke all on public.audit_events from authenticated;
+grant select on public.audit_events to authenticated;
 
 create policy audit_events_select_same_org_admin
   on public.audit_events
