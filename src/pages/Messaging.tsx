@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import {
-  ChevronDown,
-  ChevronRight,
+  Building2,
+  Lightbulb,
   Loader2,
   MessageSquare,
   Plus,
   Search,
   Send,
+  Shield,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -21,10 +22,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useMessaging } from "@/hooks/useMessaging";
@@ -37,12 +38,75 @@ import {
 } from "@/lib/messagingApi";
 import { cn } from "@/lib/utils";
 
-const CATEGORY_ORDER: { key: ConversationCategory; label: string }[] = [
-  { key: "clubs", label: "Clubs" },
-  { key: "officers", label: "Officers" },
-  { key: "admins", label: "Admins" },
-  { key: "others", label: "Others" },
+const CATEGORY_ORDER: {
+  key: ConversationCategory;
+  label: string;
+  subtitle: string;
+  emptyMessage: string;
+  newChatCta: string;
+  icon: typeof Building2;
+  summaryTone: string;
+  summaryText: string;
+}[] = [
+  {
+    key: "clubs",
+    label: "Clubs Chat",
+    subtitle: "Official clubs and active organization accounts.",
+    emptyMessage: "No club conversations yet.",
+    newChatCta: "Start a club chat",
+    icon: Building2,
+    summaryTone: "border-sky-200 bg-sky-50 text-sky-700",
+    summaryText: "Approved clubs",
+  },
+  {
+    key: "admins",
+    label: "Admins Chat",
+    subtitle: "Internal coordination with Student Life staff.",
+    emptyMessage: "No admin conversations yet.",
+    newChatCta: "Start an admin chat",
+    icon: Shield,
+    summaryTone: "border-violet-200 bg-violet-50 text-violet-700",
+    summaryText: "Internal",
+  },
+  {
+    key: "prospects",
+    label: "Prospects",
+    subtitle: "Prospective clubs still moving through approval.",
+    emptyMessage: "No prospect conversations yet.",
+    newChatCta: "Start a prospect chat",
+    icon: Lightbulb,
+    summaryTone: "border-amber-200 bg-amber-50 text-amber-700",
+    summaryText: "Pre-approval",
+  },
 ];
+
+const CATEGORY_META = Object.fromEntries(
+  CATEGORY_ORDER.map((item) => [item.key, item]),
+) as Record<ConversationCategory, (typeof CATEGORY_ORDER)[number]>;
+
+const RECIPIENT_PLACEHOLDER: Record<RecipientTab, string> = {
+  club: "Search official clubs...",
+  admin: "Search admins...",
+  prospect: "Search prospect clubs...",
+};
+
+const RECIPIENT_EMPTY_COPY: Record<RecipientTab, string> = {
+  club: "No official clubs found.",
+  admin: "No admins found.",
+  prospect: "No prospect clubs found.",
+};
+
+const COMPOSER_HINT: Record<ConversationCategory, string> = {
+  clubs: "Club chats are best for operational follow-up, reminders, and direct support.",
+  admins: "Use admin chats for cross-campus coordination and internal handoff.",
+  prospects: "Prospect chats should focus on onboarding, next steps, and approval guidance.",
+};
+
+const COMPOSER_PLACEHOLDER: Record<ConversationCategory, string> = {
+  clubs: "Message this club...",
+  admins: "Message another admin...",
+  prospects: "Message this prospect club...",
+};
 
 const isNearBottom = (element: HTMLElement) => {
   const threshold = 120;
@@ -85,22 +149,14 @@ function Messaging() {
   const [loadingRecipientOptions, setLoadingRecipientOptions] = useState(false);
   const [selectedRecipientKey, setSelectedRecipientKey] = useState<string | null>(null);
 
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<ConversationCategory, boolean>>({
-    clubs: false,
-    officers: false,
-    admins: false,
-    others: false,
-  });
-
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   const groupedConversations = useMemo(() => {
     const groups: Record<ConversationCategory, typeof conversations> = {
       clubs: [],
-      officers: [],
       admins: [],
-      others: [],
+      prospects: [],
     };
 
     conversations.forEach((conversation) => {
@@ -109,6 +165,19 @@ function Messaging() {
 
     return groups;
   }, [conversations]);
+
+  const summaryCards = useMemo(
+    () =>
+      CATEGORY_ORDER.map((group) => ({
+        ...group,
+        count: groupedConversations[group.key].length,
+        unread: groupedConversations[group.key].reduce(
+          (total, conversation) => total + conversation.unreadCount,
+          0,
+        ),
+      })),
+    [groupedConversations],
+  );
 
   const selectedRecipient = useMemo(
     () => recipientOptions.find((option) => option.key === selectedRecipientKey) ?? null,
@@ -220,177 +289,270 @@ function Messaging() {
     }
   };
 
-  const toggleGroup = (key: ConversationCategory) => {
-    setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  const openNewConversation = (tab: RecipientTab) => {
+    setNewConversationTab(tab);
+    setRecipientSearch("");
+    setSelectedRecipientKey(null);
+    setNewConversationOpen(true);
   };
 
+  const selectedMeta = selectedConversation ? CATEGORY_META[selectedConversation.category] : null;
+
   return (
-    <div className="flex h-[calc(100vh-6rem)] overflow-hidden rounded-lg border bg-background">
-      <div className="flex w-96 flex-col border-r bg-muted/10">
-        <div className="space-y-4 border-b p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold tracking-tight">Messages</h2>
+    <div className="flex h-[calc(100vh-6rem)] overflow-hidden rounded-[28px] border border-slate-200 bg-background shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+      <aside className="flex w-[390px] flex-col border-r border-slate-200 bg-slate-50/80">
+        <div className="border-b border-slate-200 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Messaging</p>
+              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Inbox</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Keep club, admin, and prospect conversations organized in one place.
+              </p>
+            </div>
             <Button
-              variant="ghost"
               size="icon"
-              className="h-8 w-8"
-              onClick={() => setNewConversationOpen(true)}
+              className="h-11 w-11 rounded-2xl bg-slate-950 text-white hover:bg-slate-800"
+              onClick={() => openNewConversation("club")}
               aria-label="Start new conversation"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-5 w-5" />
             </Button>
           </div>
 
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="relative mt-5">
+            <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
             <Input
               value={conversationSearch}
               onChange={(event) => setConversationSearch(event.target.value)}
-              placeholder="Search chats..."
-              className="bg-background pl-9"
+              placeholder="Search conversations..."
+              className="h-11 rounded-2xl border-slate-200 bg-white pl-10"
             />
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            {summaryCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <div
+                  key={card.key}
+                  className={cn(
+                    "rounded-2xl border px-3 py-3 shadow-sm",
+                    card.summaryTone,
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <Icon className="h-4 w-4" />
+                    {card.unread > 0 && (
+                      <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold">
+                        {card.unread > 99 ? "99+" : card.unread}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-3 text-lg font-semibold leading-none">{card.count}</p>
+                  <p className="mt-1 text-[11px] font-medium uppercase tracking-wide opacity-80">{card.summaryText}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="space-y-2 p-2">
+          <div className="space-y-4 p-4">
             {conversationsLoading ? (
-              Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="flex items-center gap-3 rounded-md p-3">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-3 w-full" />
+              Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="rounded-2xl border bg-white p-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-full" />
+                    </div>
                   </div>
                 </div>
               ))
             ) : (
               CATEGORY_ORDER.map((group) => {
+                const Icon = group.icon;
                 const items = groupedConversations[group.key];
-                const collapsed = collapsedGroups[group.key];
 
                 return (
-                  <section key={group.key} className="rounded-md border bg-background/80">
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(group.key)}
-                      className="flex w-full items-center justify-between px-3 py-2 text-left"
-                    >
-                      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                        {group.label}
-                      </span>
-                      <Badge variant="secondary" className="h-5 rounded-full px-1.5 text-[10px]">
-                        {items.length}
-                      </Badge>
-                    </button>
+                  <section key={group.key} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-100 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className={cn("mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border", group.summaryTone)}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-950">{group.label}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">{group.subtitle}</p>
+                          </div>
+                        </div>
+                        <Badge variant="secondary" className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600">
+                          {items.length}
+                        </Badge>
+                      </div>
+                    </div>
 
-                    {!collapsed && (
-                      <div className="space-y-1 p-1 pt-0">
-                        {items.length === 0 ? (
-                          <div className="px-3 py-2 text-xs text-muted-foreground">No chats in this section.</div>
-                        ) : (
-                          items.map((conversation) => {
-                            const active = selectedConversationId === conversation.id;
-                            const fallback = conversation.title.slice(0, 2).toUpperCase();
+                    <div className="space-y-2 p-2">
+                      {items.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-center">
+                          <p className="text-sm font-medium text-slate-600">{group.emptyMessage}</p>
+                          <Button
+                            variant="link"
+                            className="mt-1 h-auto p-0 text-sm text-slate-950"
+                            onClick={() => openNewConversation(group.key === "prospects" ? "prospect" : group.key === "admins" ? "admin" : "club")}
+                          >
+                            {group.newChatCta}
+                          </Button>
+                        </div>
+                      ) : (
+                        items.map((conversation) => {
+                          const active = selectedConversationId === conversation.id;
+                          const fallback = conversation.title.slice(0, 2).toUpperCase();
 
-                            return (
-                              <button
-                                key={conversation.id}
-                                type="button"
-                                onClick={() => setSelectedConversationId(conversation.id)}
-                                className={cn(
-                                  "flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors hover:bg-accent",
-                                  active && "bg-accent",
-                                )}
-                              >
-                                <Avatar className="h-9 w-9">
+                          return (
+                            <button
+                              key={conversation.id}
+                              type="button"
+                              onClick={() => setSelectedConversationId(conversation.id)}
+                              className={cn(
+                                "w-full rounded-2xl border px-3 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50",
+                                active
+                                  ? "border-slate-900 bg-slate-900 text-white shadow-[0_10px_30px_rgba(15,23,42,0.18)]"
+                                  : "border-transparent bg-white",
+                              )}
+                            >
+                              <div className="flex items-start gap-3">
+                                <Avatar className="h-11 w-11 rounded-2xl">
                                   <AvatarImage src={conversation.avatarUrl ?? undefined} />
-                                  <AvatarFallback>{fallback}</AvatarFallback>
+                                  <AvatarFallback className={cn(active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700")}>
+                                    {fallback}
+                                  </AvatarFallback>
                                 </Avatar>
 
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <p className="truncate text-sm font-medium">{conversation.title}</p>
-                                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                                      {conversation.lastMessageAt
-                                        ? formatDistanceToNowStrict(new Date(conversation.lastMessageAt), {
-                                            addSuffix: true,
-                                          })
-                                        : "new"}
-                                    </span>
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold">{conversation.title}</p>
+                                      <p className={cn("mt-1 text-xs", active ? "text-slate-300" : "text-slate-500")}>
+                                        {CATEGORY_META[conversation.category].summaryText}
+                                      </p>
+                                    </div>
+                                    <div className="shrink-0 text-right">
+                                      <p className={cn("text-[11px]", active ? "text-slate-300" : "text-slate-400")}>
+                                        {conversation.lastMessageAt
+                                          ? formatDistanceToNowStrict(new Date(conversation.lastMessageAt), {
+                                              addSuffix: true,
+                                            })
+                                          : "new"}
+                                      </p>
+                                      {conversation.unreadCount > 0 && (
+                                        <span className={cn(
+                                          "mt-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold",
+                                          active ? "bg-white text-slate-950" : "bg-slate-950 text-white",
+                                        )}>
+                                          {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-
-                                  <div className="mt-0.5 flex items-center justify-between gap-2">
-                                    <p className="truncate text-xs text-muted-foreground">{conversation.preview}</p>
-                                    {conversation.unreadCount > 0 && (
-                                      <Badge className="h-5 min-w-5 rounded-full px-1.5 text-[10px]">
-                                        {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
-                                      </Badge>
-                                    )}
-                                  </div>
+                                  <p className={cn("mt-3 truncate text-xs", active ? "text-slate-200" : "text-slate-500")}>
+                                    {conversation.preview}
+                                  </p>
                                 </div>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
                   </section>
                 );
               })
             )}
-            {!conversationsLoading && conversations.length === 0 && (
-              <div className="rounded-md border border-dashed bg-background p-3 text-center">
-                <p className="text-xs text-muted-foreground">No conversations yet.</p>
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 text-xs"
-                  onClick={() => setNewConversationOpen(true)}
-                >
-                  Start a chat
-                </Button>
-              </div>
-            )}
           </div>
         </ScrollArea>
-      </div>
+      </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col bg-background">
-        {!selectedConversation ? (
-          <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-muted-foreground">
-            <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-muted/30">
-              <MessageSquare className="h-10 w-10 opacity-50" />
+      <main className="flex min-w-0 flex-1 flex-col bg-white">
+        {!selectedConversation || !selectedMeta ? (
+          <div className="flex flex-1 items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_38%),linear-gradient(180deg,_#ffffff,_#f8fafc)] px-8 py-10">
+            <div className="mx-auto max-w-3xl text-center">
+              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[28px] border border-slate-200 bg-white shadow-sm">
+                <MessageSquare className="h-11 w-11 text-slate-400" />
+              </div>
+              <h3 className="mt-8 text-3xl font-semibold tracking-tight text-slate-950">Messaging should feel operational, not empty</h3>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
+                Select an existing conversation or start a new thread with an official club, another admin, or a prospect club.
+              </p>
+
+              <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                {CATEGORY_ORDER.map((group) => {
+                  const Icon = group.icon;
+                  const tab = group.key === "prospects" ? "prospect" : group.key === "admins" ? "admin" : "club";
+
+                  return (
+                    <button
+                      key={group.key}
+                      type="button"
+                      onClick={() => openNewConversation(tab)}
+                      className="rounded-3xl border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                    >
+                      <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl border", group.summaryTone)}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <p className="mt-4 text-base font-semibold text-slate-950">{group.label}</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">{group.subtitle}</p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <h3 className="text-lg font-semibold text-foreground">No Chat Selected</h3>
-            <p className="mt-2 max-w-sm text-sm">Select a conversation from the sidebar to start messaging.</p>
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between border-b p-4">
-              <div className="min-w-0">
-                <p className="truncate text-base font-semibold">{selectedConversation.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {selectedConversation.category.charAt(0).toUpperCase() + selectedConversation.category.slice(1)} chat
-                </p>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {selectedConversation.lastMessageAt
-                  ? `Last activity ${formatDistanceToNowStrict(new Date(selectedConversation.lastMessageAt), {
-                      addSuffix: true,
-                    })}`
-                  : "No messages yet"}
+            <div className="border-b border-slate-200 bg-white/85 px-6 py-5 backdrop-blur">
+              <div className="flex items-center gap-4">
+                <Avatar className="h-12 w-12 rounded-2xl border border-slate-200">
+                  <AvatarImage src={selectedConversation.avatarUrl ?? undefined} />
+                  <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                    {selectedConversation.title.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="truncate text-xl font-semibold tracking-tight text-slate-950">
+                      {selectedConversation.title}
+                    </h3>
+                    <Badge className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", selectedMeta.summaryTone)}>
+                      {selectedMeta.label}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+                    <span>{selectedMeta.subtitle}</span>
+                    <span className="text-slate-300">•</span>
+                    <span>
+                      {selectedConversation.lastMessageAt
+                        ? `Last activity ${formatDistanceToNowStrict(new Date(selectedConversation.lastMessageAt), {
+                            addSuffix: true,
+                          })}`
+                        : "No messages yet"}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="relative flex-1 overflow-hidden bg-slate-50/50 dark:bg-slate-950/50">
+            <div className="relative flex-1 overflow-hidden bg-[linear-gradient(180deg,_rgba(248,250,252,0.85),_#ffffff)]">
               {messagesLoading ? (
-                <div className="space-y-4 p-4">
-                  {Array.from({ length: 5 }).map((_, index) => (
+                <div className="space-y-4 p-6">
+                  {Array.from({ length: 6 }).map((_, index) => (
                     <div key={index} className="space-y-2">
                       <Skeleton className="h-3 w-24" />
-                      <Skeleton className="h-12 w-2/3 rounded-xl" />
+                      <Skeleton className="h-16 w-2/3 rounded-3xl" />
                     </div>
                   ))}
                 </div>
@@ -398,14 +560,15 @@ function Messaging() {
                 <div
                   ref={messagesContainerRef}
                   onScroll={handleMessagesScroll}
-                  className="h-full overflow-y-auto px-4 py-3"
+                  className="h-full overflow-y-auto px-6 py-5"
                 >
-                  <div className="mx-auto w-full max-w-4xl space-y-4">
+                  <div className="mx-auto w-full max-w-4xl space-y-5">
                     {hasMoreMessages && (
                       <div className="flex justify-center">
                         <Button
                           variant="outline"
                           size="sm"
+                          className="rounded-full"
                           onClick={loadOlderMessages}
                           disabled={loadingOlderMessages}
                         >
@@ -416,8 +579,9 @@ function Messaging() {
                     )}
 
                     {messages.length === 0 && (
-                      <div className="rounded-lg border bg-background p-6 text-center text-sm text-muted-foreground">
-                        No messages yet. Send the first message below.
+                      <div className="rounded-[28px] border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
+                        <p className="text-lg font-semibold text-slate-900">No messages yet</p>
+                        <p className="mt-2 text-sm text-slate-500">Send the first message below to open this thread.</p>
                       </div>
                     )}
 
@@ -427,19 +591,21 @@ function Messaging() {
 
                       return (
                         <div key={message.id} className={cn("flex w-full", mine ? "justify-end" : "justify-start")}>
-                          <div className="max-w-[75%] space-y-1">
-                            <div className={cn("text-[11px] text-muted-foreground", mine && "text-right")}>{senderName}</div>
+                          <div className="max-w-[78%] space-y-2">
+                            <div className={cn("px-1 text-[11px] font-medium text-slate-400", mine && "text-right")}>
+                              {senderName}
+                            </div>
                             <div
                               className={cn(
-                                "rounded-2xl px-4 py-2 text-sm shadow-sm",
+                                "rounded-[28px] px-4 py-3 text-sm leading-6 shadow-sm",
                                 mine
-                                  ? "rounded-br-none bg-primary text-primary-foreground"
-                                  : "rounded-bl-none border bg-background",
+                                  ? "rounded-br-md bg-slate-950 text-white"
+                                  : "rounded-bl-md border border-slate-200 bg-white text-slate-800",
                               )}
                             >
                               {message.body}
                             </div>
-                            <div className={cn("text-[10px] text-muted-foreground", mine && "text-right")}>
+                            <div className={cn("px-1 text-[10px] text-slate-400", mine && "text-right")}>
                               {format(new Date(message.createdAt), "MMM d, h:mm a")}
                             </div>
                           </div>
@@ -451,29 +617,32 @@ function Messaging() {
               )}
             </div>
 
-            <div className="border-t bg-background p-4">
-              <div className="mx-auto flex w-full max-w-4xl items-end gap-2">
+            <div className="border-t border-slate-200 bg-white px-6 py-4">
+              <div className="mx-auto max-w-4xl rounded-[28px] border border-slate-200 bg-white p-3 shadow-sm">
                 <Textarea
                   value={composerValue}
                   onChange={(event) => setComposerValue(event.target.value)}
                   onKeyDown={handleComposerKeyDown}
                   rows={2}
-                  placeholder="Type a message..."
-                  className="max-h-28 min-h-[44px] resize-y"
+                  placeholder={COMPOSER_PLACEHOLDER[selectedConversation.category]}
+                  className="min-h-[60px] resize-y border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0"
                 />
-                <Button
-                  onClick={handleSendMessage}
-                  disabled={sendingMessage || !composerValue.trim()}
-                  size="icon"
-                  className="h-11 w-11 shrink-0 rounded-full"
-                >
-                  {sendingMessage ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                </Button>
+                <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                  <p className="text-xs text-slate-500">{COMPOSER_HINT[selectedConversation.category]}</p>
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={sendingMessage || !composerValue.trim()}
+                    className="h-11 rounded-full px-5"
+                  >
+                    {sendingMessage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                    Send
+                  </Button>
+                </div>
               </div>
             </div>
           </>
         )}
-      </div>
+      </main>
 
       <Dialog
         open={newConversationOpen}
@@ -485,13 +654,17 @@ function Messaging() {
           }
         }}
       >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Start New Chat</DialogTitle>
-            <DialogDescription>Select a recipient and open a direct conversation.</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-2xl rounded-[28px] border-slate-200 p-0">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <DialogHeader>
+              <DialogTitle className="text-2xl tracking-tight">Start conversation</DialogTitle>
+              <DialogDescription className="pt-1 text-sm text-slate-500">
+                Choose the right audience first. Club and prospect chats route to a club-linked account, while admin chats stay internal.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <div className="space-y-4 py-1">
+          <div className="space-y-5 px-6 py-5">
             <Tabs
               value={newConversationTab}
               onValueChange={(value) => {
@@ -500,52 +673,63 @@ function Messaging() {
                 setSelectedRecipientKey(null);
               }}
             >
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="club">Club</TabsTrigger>
-                <TabsTrigger value="officer">Officer</TabsTrigger>
-                <TabsTrigger value="admin">Admin</TabsTrigger>
+              <TabsList className="grid h-auto w-full grid-cols-3 rounded-2xl bg-slate-100 p-1">
+                <TabsTrigger value="club" className="rounded-xl py-2.5">Clubs</TabsTrigger>
+                <TabsTrigger value="admin" className="rounded-xl py-2.5">Admins</TabsTrigger>
+                <TabsTrigger value="prospect" className="rounded-xl py-2.5">Prospects</TabsTrigger>
               </TabsList>
             </Tabs>
 
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
               <Input
                 value={recipientSearch}
                 onChange={(event) => setRecipientSearch(event.target.value)}
-                placeholder={`Search ${newConversationTab}s...`}
-                className="pl-9"
+                placeholder={RECIPIENT_PLACEHOLDER[newConversationTab]}
+                className="h-11 rounded-2xl border-slate-200 pl-10"
               />
             </div>
 
-            <div className="max-h-64 overflow-y-auto rounded-md border">
+            <div className="max-h-80 overflow-y-auto rounded-[24px] border border-slate-200 bg-slate-50/70 p-2">
               {loadingRecipientOptions ? (
-                <div className="space-y-2 p-3">
-                  {Array.from({ length: 4 }).map((_, index) => (
-                    <Skeleton key={index} className="h-10 w-full" />
+                <div className="space-y-2 p-2">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <Skeleton key={index} className="h-14 w-full rounded-2xl" />
                   ))}
                 </div>
               ) : recipientOptions.length === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground">No recipients found.</p>
+                <div className="px-4 py-8 text-center">
+                  <p className="text-sm font-medium text-slate-600">{RECIPIENT_EMPTY_COPY[newConversationTab]}</p>
+                  <p className="mt-1 text-xs text-slate-500">Try a different search or come back after new accounts are created.</p>
+                </div>
               ) : (
-                <div className="p-1">
+                <div className="space-y-2">
                   {recipientOptions.map((option) => (
                     <button
                       key={option.key}
                       type="button"
                       onClick={() => setSelectedRecipientKey(option.key)}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent",
-                        selectedRecipientKey === option.key && "bg-accent",
+                        "flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left text-sm transition-all",
+                        selectedRecipientKey === option.key
+                          ? "border-slate-900 bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)]"
+                          : "border-transparent bg-white hover:border-slate-200 hover:bg-white",
                       )}
                     >
-                      <Avatar className="h-8 w-8">
+                      <Avatar className="h-10 w-10 rounded-2xl">
                         <AvatarImage src={option.avatarUrl ?? undefined} />
-                        <AvatarFallback>{option.label.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        <AvatarFallback className={cn(selectedRecipientKey === option.key ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700")}>
+                          {option.label.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
                       </Avatar>
 
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{option.label}</p>
-                        {option.subtitle && <p className="truncate text-xs text-muted-foreground">{option.subtitle}</p>}
+                        {option.subtitle && (
+                          <p className={cn("truncate text-xs", selectedRecipientKey === option.key ? "text-slate-200" : "text-slate-500")}>
+                            {option.subtitle}
+                          </p>
+                        )}
                       </div>
                     </button>
                   ))}
@@ -554,13 +738,13 @@ function Messaging() {
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNewConversationOpen(false)}>
+          <DialogFooter className="border-t border-slate-200 px-6 py-4">
+            <Button variant="outline" className="rounded-full" onClick={() => setNewConversationOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleStartConversation} disabled={!selectedRecipient || creatingConversation}>
+            <Button className="rounded-full px-5" onClick={handleStartConversation} disabled={!selectedRecipient || creatingConversation}>
               {creatingConversation && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Start chat
+              Open chat
             </Button>
           </DialogFooter>
         </DialogContent>

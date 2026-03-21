@@ -4,8 +4,8 @@ export const MESSAGE_PAGE_SIZE = 30;
 const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 const EPOCH_ISO = "1970-01-01T00:00:00.000Z";
 
-export type ConversationCategory = "clubs" | "officers" | "admins" | "others";
-export type TargetType = "club" | "officer" | "admin" | "other";
+export type ConversationCategory = "clubs" | "admins" | "prospects";
+export type TargetType = "club" | "admin";
 export type MemberType = "admin" | "club" | "officer" | "other";
 
 export type MessagingProfile = {
@@ -42,7 +42,7 @@ export type ConversationMessage = {
   createdAt: string;
 };
 
-export type RecipientTab = "club" | "officer" | "admin";
+export type RecipientTab = "club" | "admin" | "prospect";
 
 export type RecipientOption = {
   key: string;
@@ -106,6 +106,7 @@ type ClubRow = {
   id: string;
   name: string;
   cover_image_url?: string | null;
+  approved?: boolean | null;
   org_id?: string | null;
   primary_user_id?: string | null;
 };
@@ -126,17 +127,19 @@ function normalizePreview(value: string | null | undefined) {
 }
 
 function normalizeCategory(value: string | null | undefined): ConversationCategory {
-  if (value === "clubs" || value === "officers" || value === "admins" || value === "others") {
+  if (value === "clubs" || value === "admins" || value === "prospects") {
     return value;
   }
-  return "others";
+  if (value === "officers") return "clubs";
+  return "admins";
 }
 
 function normalizeTargetType(value: string | null | undefined): TargetType {
-  if (value === "club" || value === "officer" || value === "admin" || value === "other") {
+  if (value === "club" || value === "admin") {
     return value;
   }
-  return "other";
+  if (value === "officer") return "club";
+  return "admin";
 }
 
 function roleToMemberType(role: string | null | undefined, clubId?: string | null): MemberType {
@@ -210,7 +213,7 @@ async function fetchLegacyConversationSummaries(params: {
   orgId: string;
   search: string;
 }) {
-  const { userId, orgId, search } = params;
+  const { userId, search, orgId } = params;
 
   const roomsResult = await supabase
     .from("chat_rooms")
@@ -298,7 +301,7 @@ async function fetchLegacyConversationSummaries(params: {
   const clubsResult = clubIds.length > 0
     ? await supabase
         .from("clubs")
-        .select("id, name, cover_image_url, org_id")
+        .select("id, name, cover_image_url, approved")
         .in("id", clubIds)
     : { data: [] as ClubRow[], error: null };
 
@@ -309,50 +312,49 @@ async function fetchLegacyConversationSummaries(params: {
   clubs.forEach((club) => clubMap.set(club.id, club));
 
   const term = search.trim().toLowerCase();
+  const unreadCounts = await fetchLegacyUnreadCounts(roomIds, userId);
 
-  const summaries: ConversationSummary[] = rooms.map((room) => {
+  const summaries: ConversationSummary[] = [];
+
+  rooms.forEach((room) => {
     const otherUserId = room.user1 === userId ? room.user2 : room.user1;
+    if (!otherUserId || otherUserId === userId) {
+      return;
+    }
+
     const profile = otherUserId ? profileMap.get(otherUserId) : null;
     const officer = otherUserId ? officerMap.get(otherUserId) : null;
 
-    let category: ConversationCategory = "others";
-    let targetType: TargetType = "other";
+    let category: ConversationCategory = "admins";
+    let targetType: TargetType = "admin";
     let targetId = otherUserId ?? room.id;
     let title = profile?.full_name || profile?.email || "Conversation";
     let avatarUrl = profile?.avatar_url ?? null;
 
     if (room.club_id) {
       const club = clubMap.get(room.club_id);
-      category = "clubs";
+      category = club?.approved === false ? "prospects" : "clubs";
       targetType = "club";
       targetId = room.club_id;
       title = club?.name ?? title;
       avatarUrl = club?.cover_image_url ?? avatarUrl;
     } else if (profile && ADMIN_ROLES.includes(profile.role ?? "")) {
       category = "admins";
-      targetType = "admin";
       targetId = profile.id;
-    } else if (officer) {
-      category = "officers";
-      targetType = "officer";
-      targetId = otherUserId ?? room.id;
-      if (officer.club_id) {
+      if (officer?.club_id) {
         const club = clubMap.get(officer.club_id);
         if (club && title === (profile?.email || "Conversation")) {
-          title = `${club.name} Officer`;
+          title = `${club.name} Admin`;
         }
       }
-    }
-
-    if (profile?.org_id && profile.org_id !== orgId && category !== "clubs") {
-      category = "others";
-      targetType = "other";
+    } else {
+      return;
     }
 
     const latest = latestByRoom.get(room.id);
     const lastMessageAt = latest?.created_at ?? room.created_at;
 
-    return {
+    summaries.push({
       id: room.id,
       orgId,
       category,
@@ -363,8 +365,8 @@ async function fetchLegacyConversationSummaries(params: {
       lastMessageAt,
       updatedAt: lastMessageAt,
       preview: normalizePreview(latest?.content),
-      unreadCount: 0,
-    };
+      unreadCount: unreadCounts.get(room.id) ?? 0,
+    });
   });
 
   const filtered = term
@@ -380,6 +382,132 @@ async function fetchLegacyConversationSummaries(params: {
     const bDate = b.lastMessageAt ?? b.updatedAt;
     return new Date(bDate).getTime() - new Date(aDate).getTime();
   });
+}
+
+async function fetchLegacyUnreadCounts(roomIds: string[], userId: string) {
+  const unreadMap = new Map<string, number>();
+  if (roomIds.length === 0) return unreadMap;
+
+  const messagesResult = await supabase
+    .from("chat_messages")
+    .select("id, room_id, sender_id")
+    .in("room_id", roomIds)
+    .neq("sender_id", userId);
+
+  if (messagesResult.error) throw messagesResult.error;
+
+  const messageRows = (messagesResult.data ?? []) as {
+    id: string;
+    room_id: string;
+    sender_id: string;
+  }[];
+
+  if (messageRows.length === 0) {
+    roomIds.forEach((roomId) => unreadMap.set(roomId, 0));
+    return unreadMap;
+  }
+
+  const messageIds = messageRows.map((row) => row.id);
+  const readsResult = await supabase
+    .from("chat_message_reads")
+    .select("message_id")
+    .eq("user_id", userId)
+    .in("message_id", messageIds);
+
+  if (readsResult.error) throw readsResult.error;
+
+  const readIds = new Set(
+    ((readsResult.data ?? []) as { message_id: string | null }[])
+      .map((row) => row.message_id)
+      .filter((value): value is string => Boolean(value)),
+  );
+
+  roomIds.forEach((roomId) => unreadMap.set(roomId, 0));
+
+  messageRows.forEach((row) => {
+    if (readIds.has(row.id)) return;
+    unreadMap.set(row.room_id, (unreadMap.get(row.room_id) ?? 0) + 1);
+  });
+
+  return unreadMap;
+}
+
+async function markLegacyConversationRead(conversationId: string, userId: string) {
+  const messagesResult = await supabase
+    .from("chat_messages")
+    .select("id")
+    .eq("room_id", conversationId);
+
+  if (messagesResult.error) throw messagesResult.error;
+
+  const messageIds = ((messagesResult.data ?? []) as { id: string }[]).map((row) => row.id);
+  if (messageIds.length === 0) return;
+
+  const existingReadsResult = await supabase
+    .from("chat_message_reads")
+    .select("message_id")
+    .eq("user_id", userId)
+    .in("message_id", messageIds);
+
+  if (existingReadsResult.error) throw existingReadsResult.error;
+
+  const existingIds = new Set(
+    ((existingReadsResult.data ?? []) as { message_id: string | null }[])
+      .map((row) => row.message_id)
+      .filter((value): value is string => Boolean(value)),
+  );
+
+  const inserts = messageIds
+    .filter((messageId) => !existingIds.has(messageId))
+    .map((messageId) => ({
+      message_id: messageId,
+      user_id: userId,
+    }));
+
+  if (inserts.length === 0) return;
+
+  const insertResult = await supabase.from("chat_message_reads").insert(inserts);
+  if (insertResult.error) throw insertResult.error;
+}
+
+async function filterReachableClubs(clubs: ClubRow[]) {
+  if (clubs.length === 0) return clubs;
+
+  const clubIds = clubs.map((club) => club.id);
+  const [officersResult, profilesResult, membersResult] = await Promise.all([
+    supabase
+      .from("officers")
+      .select("club_id, user_id")
+      .in("club_id", clubIds)
+      .not("user_id", "is", null),
+    supabase
+      .from("profiles")
+      .select("club_id, id")
+      .in("club_id", clubIds),
+    supabase
+      .from("club_members")
+      .select("club_id, user_id")
+      .in("club_id", clubIds)
+      .eq("status", "approved")
+      .not("user_id", "is", null),
+  ]);
+
+  if (officersResult.error) throw officersResult.error;
+  if (profilesResult.error) throw profilesResult.error;
+  if (membersResult.error) throw membersResult.error;
+
+  const eligibleClubIds = new Set<string>();
+  ((officersResult.data ?? []) as { club_id: string | null; user_id: string | null }[]).forEach((row) => {
+    if (row.club_id && row.user_id) eligibleClubIds.add(row.club_id);
+  });
+  ((profilesResult.data ?? []) as { club_id: string | null; id: string }[]).forEach((row) => {
+    if (row.club_id) eligibleClubIds.add(row.club_id);
+  });
+  ((membersResult.data ?? []) as { club_id: string | null; user_id: string | null }[]).forEach((row) => {
+    if (row.club_id && row.user_id) eligibleClubIds.add(row.club_id);
+  });
+
+  return clubs.filter((club) => eligibleClubIds.has(club.id));
 }
 
 async function fetchLegacyConversationMessages(params: {
@@ -437,6 +565,13 @@ async function sendLegacyConversationMessage(params: {
   if (result.error) throw result.error;
 
   const row = result.data as LegacyMessageRow;
+  await supabase
+    .from("chat_message_reads")
+    .insert({
+      message_id: row.id,
+      user_id: params.senderId,
+    });
+
   return {
     id: row.id,
     conversationId: row.room_id,
@@ -680,6 +815,7 @@ export async function markConversationRead(params: {
 }) {
   const backend = await getMessagingBackend();
   if (backend === "legacy") {
+    await markLegacyConversationRead(params.conversationId, params.userId);
     return;
   }
 
@@ -751,13 +887,66 @@ export async function fetchRecipientOptions(params: {
   currentUserId: string;
 }) {
   const { orgId, tab, search, currentUserId } = params;
+  const backend = await getMessagingBackend();
   const term = search.trim().toLowerCase();
 
-  if (tab === "club") {
+  if (backend === "legacy") {
+    if (tab === "club" || tab === "prospect") {
+      const wantsApproved = tab === "club";
+      const clubsResult = await supabase
+        .from("clubs")
+        .select("id, name, cover_image_url, approved")
+        .eq("approved", wantsApproved)
+        .order("name", { ascending: true });
+
+      if (clubsResult.error) throw clubsResult.error;
+
+      const clubs = await filterReachableClubs((clubsResult.data ?? []) as ClubRow[]);
+
+      return clubs
+        .filter((club) => (term ? club.name.toLowerCase().includes(term) : true))
+        .map((club) => ({
+          key: club.id,
+          targetType: "club",
+          targetId: club.id,
+          label: club.name,
+          subtitle: wantsApproved ? "Official club" : "Prospect club",
+          avatarUrl: club.cover_image_url ?? null,
+        } satisfies RecipientOption));
+    }
+
+    const adminsResult = await supabase
+      .from("profiles")
+      .select("id, full_name, email, role, avatar_url")
+      .in("role", ADMIN_ROLES)
+      .neq("id", currentUserId)
+      .order("full_name", { ascending: true });
+
+    if (adminsResult.error) throw adminsResult.error;
+
+    return ((adminsResult.data ?? []) as ProfileRow[])
+      .filter((profile) => {
+        if (!term) return true;
+        const sample = `${profile.full_name ?? ""} ${profile.email ?? ""}`.toLowerCase();
+        return sample.includes(term);
+      })
+      .map((profile) => ({
+        key: profile.id,
+        targetType: "admin",
+        targetId: profile.id,
+        label: profile.full_name || profile.email || "Admin",
+        subtitle: "Student Life admin",
+        avatarUrl: profile.avatar_url ?? null,
+      } satisfies RecipientOption));
+  }
+
+  if (tab === "club" || tab === "prospect") {
+    const wantsApproved = tab === "club";
     const scopedClubsResult = await supabase
       .from("clubs")
-      .select("id, name, cover_image_url, org_id")
+      .select("id, name, cover_image_url, org_id, approved")
       .eq("org_id", orgId)
+      .eq("approved", wantsApproved)
       .order("name", { ascending: true });
 
     if (scopedClubsResult.error) throw scopedClubsResult.error;
@@ -768,95 +957,23 @@ export async function fetchRecipientOptions(params: {
       : (
         await supabase
           .from("clubs")
-          .select("id, name, cover_image_url, org_id")
+          .select("id, name, cover_image_url, org_id, approved")
+          .eq("approved", wantsApproved)
           .order("name", { ascending: true })
       ).data ?? [];
 
-    return (clubs as ClubRow[])
+    const reachableClubs = await filterReachableClubs(clubs as ClubRow[]);
+
+    return reachableClubs
       .filter((club) => (term ? club.name.toLowerCase().includes(term) : true))
       .map((club) => ({
         key: club.id,
         targetType: "club",
         targetId: club.id,
         label: club.name,
-        subtitle: "Club",
+        subtitle: wantsApproved ? "Official club" : "Prospect club",
         avatarUrl: club.cover_image_url ?? null,
       } satisfies RecipientOption));
-  }
-
-  if (tab === "officer") {
-    const officersResult = await supabase
-      .from("officers")
-      .select("user_id, club_id, role")
-      .limit(600);
-
-    if (officersResult.error) throw officersResult.error;
-
-    const officerRows = ((officersResult.data ?? []) as OfficerRow[])
-      .filter((row) => Boolean(row.user_id) && row.user_id !== currentUserId);
-
-    const userIds = Array.from(new Set(officerRows.map((row) => row.user_id).filter((id): id is string => Boolean(id))));
-
-    if (userIds.length === 0) return [] as RecipientOption[];
-
-    const scopedProfileResult = await supabase
-      .from("profiles")
-      .select("id, full_name, email, avatar_url, org_id")
-      .in("id", userIds)
-      .eq("org_id", orgId);
-
-    if (scopedProfileResult.error) throw scopedProfileResult.error;
-
-    let profiles = (scopedProfileResult.data ?? []) as ProfileRow[];
-    if (profiles.length === 0) {
-      const fallbackProfileResult = await supabase
-        .from("profiles")
-        .select("id, full_name, email, avatar_url, org_id")
-        .in("id", userIds);
-
-      if (fallbackProfileResult.error) throw fallbackProfileResult.error;
-      profiles = (fallbackProfileResult.data ?? []) as ProfileRow[];
-    }
-
-    if (profiles.length === 0) return [] as RecipientOption[];
-
-    const clubIds = Array.from(new Set(officerRows.map((row) => row.club_id).filter((id): id is string => Boolean(id))));
-    const clubsResult = clubIds.length
-      ? await supabase.from("clubs").select("id, name").in("id", clubIds)
-      : { data: [] as ClubRow[], error: null };
-
-    if (clubsResult.error) throw clubsResult.error;
-
-    const profileMap = new Map<string, ProfileRow>();
-    profiles.forEach((profile) => profileMap.set(profile.id, profile));
-
-    const clubMap = new Map<string, string>();
-    ((clubsResult.data ?? []) as ClubRow[]).forEach((club) => clubMap.set(club.id, club.name));
-
-    const options: RecipientOption[] = [];
-    userIds.forEach((userId) => {
-      const profile = profileMap.get(userId);
-      if (!profile) return;
-
-      const officerRow = officerRows.find((row) => row.user_id === userId) ?? null;
-      const clubName = officerRow?.club_id ? clubMap.get(officerRow.club_id) : null;
-      const roleLabel = officerRow?.role ?? "Officer";
-      const label = profile.full_name || profile.email || "Officer";
-      const subtitle = clubName ? `${roleLabel} • ${clubName}` : roleLabel;
-
-      if (term && !`${label} ${subtitle}`.toLowerCase().includes(term)) return;
-
-      options.push({
-        key: userId,
-        targetType: "officer",
-        targetId: userId,
-        label,
-        subtitle,
-        avatarUrl: profile.avatar_url ?? null,
-      });
-    });
-
-    return options;
   }
 
   const scopedAdminResult = await supabase
@@ -903,42 +1020,61 @@ async function resolveTargetUser(params: {
   targetType: TargetType;
   targetId: string;
 }) {
-  const { orgId, targetType, targetId } = params;
+  const { targetType, targetId } = params;
 
   if (targetType === "club") {
-    let clubResult = await supabase
+    const clubResult = await supabase
       .from("clubs")
-      .select("id, org_id, primary_user_id")
+      .select("id, approved")
       .eq("id", targetId)
-      .eq("org_id", orgId)
       .maybeSingle();
 
     if (clubResult.error) throw clubResult.error;
-    if (!clubResult.data) {
-      clubResult = await supabase
-        .from("clubs")
-        .select("id, org_id, primary_user_id")
-        .eq("id", targetId)
-        .maybeSingle();
-
-      if (clubResult.error) throw clubResult.error;
-    }
 
     const club = clubResult.data as ClubRow | null;
     if (!club) throw new Error("Club not found in this organization.");
 
-    let targetUserId = club.primary_user_id ?? null;
+    let targetUserId: string | null = null;
 
     if (!targetUserId) {
       const officerResult = await supabase
         .from("officers")
         .select("user_id")
         .eq("club_id", targetId)
+        .not("user_id", "is", null)
+        .order("created_at", { ascending: true })
         .limit(1)
         .maybeSingle();
 
       if (officerResult.error) throw officerResult.error;
       targetUserId = (officerResult.data as { user_id: string | null } | null)?.user_id ?? null;
+    }
+
+    if (!targetUserId) {
+      const profileResult = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("club_id", targetId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (profileResult.error) throw profileResult.error;
+      targetUserId = (profileResult.data as { id: string } | null)?.id ?? null;
+    }
+
+    if (!targetUserId) {
+      const memberResult = await supabase
+        .from("club_members")
+        .select("user_id")
+        .eq("club_id", targetId)
+        .eq("status", "approved")
+        .not("user_id", "is", null)
+        .limit(1)
+        .maybeSingle();
+
+      if (memberResult.error) throw memberResult.error;
+      targetUserId = (memberResult.data as { user_id: string | null } | null)?.user_id ?? null;
     }
 
     if (!targetUserId) {
@@ -948,31 +1084,20 @@ async function resolveTargetUser(params: {
     return {
       targetUserId,
       memberType: "club" as MemberType,
-      category: "clubs" as ConversationCategory,
+      category: club.approved === false ? ("prospects" as ConversationCategory) : ("clubs" as ConversationCategory),
     };
   }
 
-  let profileResult = await supabase
+  const profileResult = await supabase
     .from("profiles")
-    .select("id, org_id, role, club_id")
+    .select("id, role, club_id")
     .eq("id", targetId)
-    .eq("org_id", orgId)
     .maybeSingle();
 
   if (profileResult.error) throw profileResult.error;
-  if (!profileResult.data) {
-    profileResult = await supabase
-      .from("profiles")
-      .select("id, org_id, role, club_id")
-      .eq("id", targetId)
-      .maybeSingle();
-
-    if (profileResult.error) throw profileResult.error;
-  }
 
   const profile = profileResult.data as {
     id: string;
-    org_id: string;
     role: string | null;
     club_id: string | null;
   } | null;
@@ -991,19 +1116,7 @@ async function resolveTargetUser(params: {
     };
   }
 
-  if (targetType === "officer") {
-    return {
-      targetUserId: targetId,
-      memberType: "officer" as MemberType,
-      category: "officers" as ConversationCategory,
-    };
-  }
-
-  return {
-    targetUserId: targetId,
-    memberType: "other" as MemberType,
-    category: "others" as ConversationCategory,
-  };
+  throw new Error("Unsupported conversation target.");
 }
 
 export async function getOrCreateConversation(params: {
