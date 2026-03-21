@@ -53,6 +53,34 @@ export type RecipientOption = {
   avatarUrl: string | null;
 };
 
+export type MessagingDirectoryUser = {
+  id: string;
+  fullName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  role: string | null;
+  clubId: string | null;
+};
+
+export type ConversationAccessMember = {
+  id: string;
+  fullName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  tags: string[];
+};
+
+export type ConversationAccessState = {
+  directMembers: ConversationAccessMember[];
+  clubLinkedMembers: ConversationAccessMember[];
+};
+
+export type ClubMessagingSyncResult = {
+  clubCount: number;
+  createdCount: number;
+  connectedCount: number;
+};
+
 export type MessagingBackend = "modern" | "legacy";
 
 type ConversationRow = {
@@ -115,6 +143,11 @@ type OfficerRow = {
   user_id: string | null;
   club_id: string | null;
   role: string | null;
+};
+
+type ChatMemberRow = {
+  room_id: string;
+  user_id: string;
 };
 
 const ADMIN_ROLES = ["admin", "student_life_admin", "super_admin"];
@@ -215,15 +248,39 @@ async function fetchLegacyConversationSummaries(params: {
 }) {
   const { userId, search, orgId } = params;
 
-  const roomsResult = await supabase
-    .from("chat_rooms")
-    .select("id, type, user1, user2, name, image_url, club_id, created_at")
-    .eq("type", "dm")
-    .or(`user1.eq.${userId},user2.eq.${userId}`);
+  const [dmRoomsResult, memberRoomsResult] = await Promise.all([
+    supabase
+      .from("chat_rooms")
+      .select("id, type, user1, user2, name, image_url, club_id, created_at")
+      .eq("type", "dm")
+      .or(`user1.eq.${userId},user2.eq.${userId}`),
+    supabase.from("chat_members").select("room_id, user_id").eq("user_id", userId),
+  ]);
 
-  if (roomsResult.error) throw roomsResult.error;
+  if (dmRoomsResult.error) throw dmRoomsResult.error;
+  if (memberRoomsResult.error) throw memberRoomsResult.error;
 
-  const rooms = (roomsResult.data ?? []) as LegacyRoomRow[];
+  const memberRoomIds = Array.from(
+    new Set(
+      ((memberRoomsResult.data ?? []) as ChatMemberRow[]).map((row) => row.room_id),
+    ),
+  );
+
+  const groupRoomsResult = memberRoomIds.length
+    ? await supabase
+        .from("chat_rooms")
+        .select("id, type, user1, user2, name, image_url, club_id, created_at")
+        .eq("type", "group")
+        .in("id", memberRoomIds)
+    : { data: [] as LegacyRoomRow[], error: null };
+
+  if (groupRoomsResult.error) throw groupRoomsResult.error;
+
+  const roomMap = new Map<string, LegacyRoomRow>();
+  ((dmRoomsResult.data ?? []) as LegacyRoomRow[]).forEach((room) => roomMap.set(room.id, room));
+  ((groupRoomsResult.data ?? []) as LegacyRoomRow[]).forEach((room) => roomMap.set(room.id, room));
+
+  const rooms = Array.from(roomMap.values());
   if (rooms.length === 0) return [] as ConversationSummary[];
 
   const roomIds = rooms.map((room) => room.id);
@@ -242,9 +299,11 @@ async function fetchLegacyConversationSummaries(params: {
     }
   });
 
+  const dmRooms = rooms.filter((room) => room.type === "dm");
+
   const otherUserIds = Array.from(
     new Set(
-      rooms
+      dmRooms
         .map((room) => (room.user1 === userId ? room.user2 : room.user1))
         .filter((id): id is string => Boolean(id)),
     ),
@@ -254,7 +313,7 @@ async function fetchLegacyConversationSummaries(params: {
     otherUserIds.length > 0
       ? supabase
           .from("profiles")
-          .select("id, full_name, email, avatar_url, role, club_id, org_id")
+          .select("id, full_name, email, avatar_url, role, club_id")
           .in("id", otherUserIds)
       : Promise.resolve({ data: [] as ProfileRow[], error: null }),
     otherUserIds.length > 0
@@ -317,6 +376,29 @@ async function fetchLegacyConversationSummaries(params: {
   const summaries: ConversationSummary[] = [];
 
   rooms.forEach((room) => {
+    if (room.type === "group") {
+      if (!room.club_id) return;
+
+      const club = clubMap.get(room.club_id);
+      const latest = latestByRoom.get(room.id);
+      const lastMessageAt = latest?.created_at ?? room.created_at;
+
+      summaries.push({
+        id: room.id,
+        orgId,
+        category: club?.approved === false ? "prospects" : "clubs",
+        targetType: "club",
+        targetId: room.club_id,
+        title: club?.name ?? "Club channel",
+        avatarUrl: club?.cover_image_url ?? null,
+        lastMessageAt,
+        updatedAt: lastMessageAt,
+        preview: normalizePreview(latest?.content),
+        unreadCount: unreadCounts.get(room.id) ?? 0,
+      });
+      return;
+    }
+
     const otherUserId = room.user1 === userId ? room.user2 : room.user1;
     if (!otherUserId || otherUserId === userId) {
       return;
@@ -468,46 +550,6 @@ async function markLegacyConversationRead(conversationId: string, userId: string
 
   const insertResult = await supabase.from("chat_message_reads").insert(inserts);
   if (insertResult.error) throw insertResult.error;
-}
-
-async function filterReachableClubs(clubs: ClubRow[]) {
-  if (clubs.length === 0) return clubs;
-
-  const clubIds = clubs.map((club) => club.id);
-  const [officersResult, profilesResult, membersResult] = await Promise.all([
-    supabase
-      .from("officers")
-      .select("club_id, user_id")
-      .in("club_id", clubIds)
-      .not("user_id", "is", null),
-    supabase
-      .from("profiles")
-      .select("club_id, id")
-      .in("club_id", clubIds),
-    supabase
-      .from("club_members")
-      .select("club_id, user_id")
-      .in("club_id", clubIds)
-      .eq("status", "approved")
-      .not("user_id", "is", null),
-  ]);
-
-  if (officersResult.error) throw officersResult.error;
-  if (profilesResult.error) throw profilesResult.error;
-  if (membersResult.error) throw membersResult.error;
-
-  const eligibleClubIds = new Set<string>();
-  ((officersResult.data ?? []) as { club_id: string | null; user_id: string | null }[]).forEach((row) => {
-    if (row.club_id && row.user_id) eligibleClubIds.add(row.club_id);
-  });
-  ((profilesResult.data ?? []) as { club_id: string | null; id: string }[]).forEach((row) => {
-    if (row.club_id) eligibleClubIds.add(row.club_id);
-  });
-  ((membersResult.data ?? []) as { club_id: string | null; user_id: string | null }[]).forEach((row) => {
-    if (row.club_id && row.user_id) eligibleClubIds.add(row.club_id);
-  });
-
-  return clubs.filter((club) => eligibleClubIds.has(club.id));
 }
 
 async function fetchLegacyConversationMessages(params: {
@@ -886,7 +928,7 @@ export async function fetchRecipientOptions(params: {
   search: string;
   currentUserId: string;
 }) {
-  const { orgId, tab, search, currentUserId } = params;
+  const { tab, search, currentUserId } = params;
   const backend = await getMessagingBackend();
   const term = search.trim().toLowerCase();
 
@@ -901,9 +943,7 @@ export async function fetchRecipientOptions(params: {
 
       if (clubsResult.error) throw clubsResult.error;
 
-      const clubs = await filterReachableClubs((clubsResult.data ?? []) as ClubRow[]);
-
-      return clubs
+      return ((clubsResult.data ?? []) as ClubRow[])
         .filter((club) => (term ? club.name.toLowerCase().includes(term) : true))
         .map((club) => ({
           key: club.id,
@@ -944,8 +984,7 @@ export async function fetchRecipientOptions(params: {
     const wantsApproved = tab === "club";
     const scopedClubsResult = await supabase
       .from("clubs")
-      .select("id, name, cover_image_url, org_id, approved")
-      .eq("org_id", orgId)
+      .select("id, name, cover_image_url, approved")
       .eq("approved", wantsApproved)
       .order("name", { ascending: true });
 
@@ -957,14 +996,12 @@ export async function fetchRecipientOptions(params: {
       : (
         await supabase
           .from("clubs")
-          .select("id, name, cover_image_url, org_id, approved")
+          .select("id, name, cover_image_url, approved")
           .eq("approved", wantsApproved)
           .order("name", { ascending: true })
       ).data ?? [];
 
-    const reachableClubs = await filterReachableClubs(clubs as ClubRow[]);
-
-    return reachableClubs
+    return (clubs as ClubRow[])
       .filter((club) => (term ? club.name.toLowerCase().includes(term) : true))
       .map((club) => ({
         key: club.id,
@@ -978,8 +1015,7 @@ export async function fetchRecipientOptions(params: {
 
   const scopedAdminResult = await supabase
     .from("profiles")
-    .select("id, full_name, email, role, avatar_url, org_id")
-    .eq("org_id", orgId)
+    .select("id, full_name, email, role, avatar_url")
     .in("role", ADMIN_ROLES)
     .neq("id", currentUserId)
     .order("full_name", { ascending: true });
@@ -990,7 +1026,7 @@ export async function fetchRecipientOptions(params: {
   if (admins.length === 0) {
     const fallbackAdminResult = await supabase
       .from("profiles")
-      .select("id, full_name, email, role, avatar_url, org_id")
+      .select("id, full_name, email, role, avatar_url")
       .in("role", ADMIN_ROLES)
       .neq("id", currentUserId)
       .order("full_name", { ascending: true });
@@ -1129,6 +1165,15 @@ export async function getOrCreateConversation(params: {
   const backend = await getMessagingBackend();
 
   if (backend === "legacy") {
+    if (targetType === "club") {
+      const syncResult = await supabase.rpc("ensure_club_chat_room", {
+        target_club_id: targetId,
+      });
+
+      if (syncResult.error) throw syncResult.error;
+      return syncResult.data as string;
+    }
+
     const resolved = await resolveTargetUser({ orgId, targetType, targetId });
 
     if (resolved.targetUserId === currentUserId) {
@@ -1156,7 +1201,7 @@ export async function getOrCreateConversation(params: {
         type: "dm",
         user1: currentUserId,
         user2: resolved.targetUserId,
-        club_id: targetType === "club" ? targetId : null,
+        club_id: null,
       })
       .select("id")
       .single();
@@ -1250,4 +1295,209 @@ export async function getOrCreateConversation(params: {
 
 export function resolveSenderType(profile: MessagingProfile | null): MemberType {
   return roleToMemberType(profile?.role, profile?.club_id);
+}
+
+export async function syncClubMessagingPaths() {
+  const backend = await getMessagingBackend();
+  if (backend !== "legacy") {
+    return {
+      clubCount: 0,
+      createdCount: 0,
+      connectedCount: 0,
+    } satisfies ClubMessagingSyncResult;
+  }
+
+  const result = await supabase.rpc("sync_admin_club_chat_paths");
+  if (result.error) throw result.error;
+
+  const payload = (result.data ?? {}) as {
+    club_count?: number;
+    created_count?: number;
+    connected_count?: number;
+  };
+
+  return {
+    clubCount: payload.club_count ?? 0,
+    createdCount: payload.created_count ?? 0,
+    connectedCount: payload.connected_count ?? 0,
+  } satisfies ClubMessagingSyncResult;
+}
+
+function mapDirectoryUser(
+  profile: MessagingProfile & { avatar_url?: string | null } & { role?: string | null },
+): MessagingDirectoryUser {
+  return {
+    id: profile.id,
+    fullName: profile.full_name ?? null,
+    email: profile.email ?? null,
+    avatarUrl: profile.avatar_url ?? null,
+    role: profile.role ?? null,
+    clubId: profile.club_id ?? null,
+  };
+}
+
+export async function searchMessagingUsers(params: {
+  search: string;
+  excludeUserIds?: string[];
+  currentUserId?: string | null;
+}) {
+  const { search, excludeUserIds = [], currentUserId = null } = params;
+
+  const result = await supabase
+    .from("profiles")
+    .select("id, full_name, email, avatar_url, role, club_id")
+    .order("full_name", { ascending: true })
+    .limit(100);
+
+  if (result.error) throw result.error;
+
+  const term = search.trim().toLowerCase();
+  const excluded = new Set(excludeUserIds);
+  if (currentUserId) excluded.add(currentUserId);
+
+  return ((result.data ?? []) as (MessagingProfile & { avatar_url?: string | null })[])
+    .map(mapDirectoryUser)
+    .filter((profile) => !excluded.has(profile.id))
+    .filter((profile) => {
+      if (!term) return true;
+      const sample = `${profile.fullName ?? ""} ${profile.email ?? ""}`.toLowerCase();
+      return sample.includes(term);
+    });
+}
+
+export async function findMessagingUserByEmail(email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const result = await supabase
+    .from("profiles")
+    .select("id, full_name, email, avatar_url, role, club_id")
+    .eq("email", normalized)
+    .maybeSingle();
+
+  if (result.error) throw result.error;
+  if (!result.data) return null;
+
+  return mapDirectoryUser(result.data as MessagingProfile & { avatar_url?: string | null });
+}
+
+function buildAccessMember(
+  profile: MessagingDirectoryUser | null,
+  fallbackUserId: string,
+  tags: string[],
+): ConversationAccessMember {
+  return {
+    id: fallbackUserId,
+    fullName: profile?.fullName ?? null,
+    email: profile?.email ?? null,
+    avatarUrl: profile?.avatarUrl ?? null,
+    tags,
+  };
+}
+
+export async function fetchConversationAccessState(params: {
+  conversationId: string;
+  clubId: string | null;
+}) {
+  const { conversationId, clubId } = params;
+  const backend = await getMessagingBackend();
+
+  if (backend !== "legacy") {
+    return {
+      directMembers: [],
+      clubLinkedMembers: [],
+    } satisfies ConversationAccessState;
+  }
+
+  const directMembersResult = await supabase
+    .from("chat_members")
+    .select("room_id, user_id")
+    .eq("room_id", conversationId);
+
+  if (directMembersResult.error) throw directMembersResult.error;
+
+  const directMemberRows = (directMembersResult.data ?? []) as ChatMemberRow[];
+  const directUserIds = Array.from(new Set(directMemberRows.map((row) => row.user_id)));
+
+  let linkedUserIds: string[] = [];
+  const linkedTags = new Map<string, Set<string>>();
+
+  if (clubId) {
+    const [officersResult, clubMembersResult] = await Promise.all([
+      supabase.from("officers").select("user_id").eq("club_id", clubId).not("user_id", "is", null),
+      supabase
+        .from("club_members")
+        .select("user_id")
+        .eq("club_id", clubId)
+        .eq("status", "approved")
+        .not("user_id", "is", null),
+    ]);
+
+    if (officersResult.error) throw officersResult.error;
+    if (clubMembersResult.error) throw clubMembersResult.error;
+
+    ((officersResult.data ?? []) as { user_id: string | null }[]).forEach((row) => {
+      if (!row.user_id) return;
+      const tags = linkedTags.get(row.user_id) ?? new Set<string>();
+      tags.add("Officer");
+      linkedTags.set(row.user_id, tags);
+    });
+
+    ((clubMembersResult.data ?? []) as { user_id: string | null }[]).forEach((row) => {
+      if (!row.user_id) return;
+      const tags = linkedTags.get(row.user_id) ?? new Set<string>();
+      tags.add("Club member");
+      linkedTags.set(row.user_id, tags);
+    });
+
+    linkedUserIds = Array.from(linkedTags.keys());
+  }
+
+  const userIds = Array.from(new Set([...directUserIds, ...linkedUserIds]));
+  const profilesMap = new Map<string, MessagingDirectoryUser>();
+
+  if (userIds.length > 0) {
+    const profilesResult = await supabase
+      .from("profiles")
+      .select("id, full_name, email, avatar_url, role, club_id")
+      .in("id", userIds);
+
+    if (profilesResult.error) throw profilesResult.error;
+
+    ((profilesResult.data ?? []) as (MessagingProfile & { avatar_url?: string | null })[]).forEach((profile) => {
+      const mapped = mapDirectoryUser(profile);
+      profilesMap.set(mapped.id, mapped);
+    });
+  }
+
+  return {
+    directMembers: directUserIds.map((userId) =>
+      buildAccessMember(profilesMap.get(userId) ?? null, userId, ["Direct access"]),
+    ),
+    clubLinkedMembers: linkedUserIds.map((userId) =>
+      buildAccessMember(
+        profilesMap.get(userId) ?? null,
+        userId,
+        Array.from(linkedTags.get(userId) ?? []),
+      ),
+    ),
+  } satisfies ConversationAccessState;
+}
+
+export async function addConversationAccess(params: {
+  conversationId: string;
+  userId: string;
+}) {
+  const backend = await getMessagingBackend();
+
+  if (backend !== "legacy") {
+    throw new Error("Conversation access management is only configured for the live legacy backend.");
+  }
+
+  const result = await supabase.rpc("add_chat_room_member", {
+    target_room_id: params.conversationId,
+    target_user_id: params.userId,
+  });
+
+  if (result.error) throw result.error;
 }

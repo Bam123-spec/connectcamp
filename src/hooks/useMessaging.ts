@@ -382,6 +382,7 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
     setConversationSearch,
     conversations,
     conversationsLoading,
+    refreshConversations,
     selectedConversationId,
     setSelectedConversationId,
     selectedConversation,

@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, formatDistanceToNowStrict } from "date-fns";
+import { Link } from "react-router-dom";
 import {
   Building2,
   Lightbulb,
   Loader2,
+  Mail,
   MessageSquare,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Shield,
+  UserPlus,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -30,11 +34,18 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useMessaging } from "@/hooks/useMessaging";
 import {
+  addConversationAccess,
+  type ConversationAccessState,
   type ConversationCategory,
+  findMessagingUserByEmail,
   type MessagingProfile,
+  type MessagingDirectoryUser,
   type RecipientOption,
   type RecipientTab,
+  fetchConversationAccessState,
   fetchRecipientOptions,
+  searchMessagingUsers,
+  syncClubMessagingPaths,
 } from "@/lib/messagingApi";
 import { cn } from "@/lib/utils";
 
@@ -124,6 +135,7 @@ function Messaging() {
     setConversationSearch,
     conversations,
     conversationsLoading,
+    refreshConversations,
     selectedConversationId,
     setSelectedConversationId,
     selectedConversation,
@@ -148,9 +160,24 @@ function Messaging() {
   const [recipientOptions, setRecipientOptions] = useState<RecipientOption[]>([]);
   const [loadingRecipientOptions, setLoadingRecipientOptions] = useState(false);
   const [selectedRecipientKey, setSelectedRecipientKey] = useState<string | null>(null);
+  const [syncingClubPaths, setSyncingClubPaths] = useState(false);
+  const [accessDialogOpen, setAccessDialogOpen] = useState(false);
+  const [accessState, setAccessState] = useState<ConversationAccessState>({
+    directMembers: [],
+    clubLinkedMembers: [],
+  });
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [directorySearch, setDirectorySearch] = useState("");
+  const [directoryUsers, setDirectoryUsers] = useState<MessagingDirectoryUser[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [emailAccess, setEmailAccess] = useState("");
+  const [addingAccess, setAddingAccess] = useState(false);
 
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const autoProvisionedRef = useRef(false);
+  const isAdminWorkspace =
+    profile?.role === "admin" || profile?.role === "student_life_admin" || profile?.role === "super_admin";
 
   const groupedConversations = useMemo(() => {
     const groups: Record<ConversationCategory, typeof conversations> = {
@@ -182,6 +209,15 @@ function Messaging() {
   const selectedRecipient = useMemo(
     () => recipientOptions.find((option) => option.key === selectedRecipientKey) ?? null,
     [recipientOptions, selectedRecipientKey],
+  );
+
+  const existingAccessUserIds = useMemo(
+    () =>
+      new Set([
+        ...accessState.directMembers.map((member) => member.id),
+        ...accessState.clubLinkedMembers.map((member) => member.id),
+      ]),
+    [accessState.clubLinkedMembers, accessState.directMembers],
   );
 
   useEffect(() => {
@@ -237,6 +273,107 @@ function Messaging() {
       window.clearTimeout(timeoutId);
     };
   }, [newConversationOpen, newConversationTab, orgId, recipientSearch, selectedRecipientKey, toast, userId]);
+
+  useEffect(() => {
+    if (!userId || !isAdminWorkspace || autoProvisionedRef.current) return;
+
+    autoProvisionedRef.current = true;
+    let active = true;
+    setSyncingClubPaths(true);
+
+    syncClubMessagingPaths()
+      .then(async (result) => {
+        if (!active) return;
+        await refreshConversations();
+
+        if (result.createdCount > 0 || result.connectedCount > 0) {
+          toast({
+            title: "Club channels synced",
+            description: `${result.clubCount} clubs checked, ${result.createdCount} channels created, ${result.connectedCount} connected to your inbox.`,
+          });
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        toast({
+          variant: "destructive",
+          title: "Could not sync club channels",
+          description: error instanceof Error ? error.message : "Please retry.",
+        });
+      })
+      .finally(() => {
+        if (active) setSyncingClubPaths(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAdminWorkspace, refreshConversations, toast, userId]);
+
+  useEffect(() => {
+    if (!accessDialogOpen || !selectedConversation || selectedConversation.targetType !== "club") return;
+
+    let active = true;
+    setAccessLoading(true);
+
+    fetchConversationAccessState({
+      conversationId: selectedConversation.id,
+      clubId: selectedConversation.targetId,
+    })
+      .then((state) => {
+        if (!active) return;
+        setAccessState(state);
+      })
+      .catch((error) => {
+        if (!active) return;
+        toast({
+          variant: "destructive",
+          title: "Could not load chat access",
+          description: error instanceof Error ? error.message : "Please retry.",
+        });
+      })
+      .finally(() => {
+        if (active) setAccessLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [accessDialogOpen, selectedConversation, toast]);
+
+  useEffect(() => {
+    if (!accessDialogOpen || !userId) return;
+
+    let active = true;
+    setDirectoryLoading(true);
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const nextUsers = await searchMessagingUsers({
+          search: directorySearch,
+          excludeUserIds: Array.from(existingAccessUserIds),
+          currentUserId: userId,
+        });
+
+        if (!active) return;
+        setDirectoryUsers(nextUsers);
+      } catch (error) {
+        if (!active) return;
+        toast({
+          variant: "destructive",
+          title: "Could not load workspace users",
+          description: error instanceof Error ? error.message : "Please retry.",
+        });
+      } finally {
+        if (active) setDirectoryLoading(false);
+      }
+    }, 120);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [accessDialogOpen, directorySearch, existingAccessUserIds, toast, userId]);
 
   const handleMessagesScroll = () => {
     const container = messagesContainerRef.current;
@@ -294,6 +431,92 @@ function Messaging() {
     setRecipientSearch("");
     setSelectedRecipientKey(null);
     setNewConversationOpen(true);
+  };
+
+  const handleSyncClubPaths = async () => {
+    setSyncingClubPaths(true);
+    try {
+      const result = await syncClubMessagingPaths();
+      await refreshConversations();
+      toast({
+        title: "Club channels synced",
+        description: `${result.clubCount} clubs checked, ${result.createdCount} channels created, ${result.connectedCount} connected to your inbox.`,
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Could not sync club channels",
+        description: error instanceof Error ? error.message : "Please retry.",
+      });
+    } finally {
+      setSyncingClubPaths(false);
+    }
+  };
+
+  const handleGrantAccess = async (targetUserId: string) => {
+    if (!selectedConversation) return;
+
+    setAddingAccess(true);
+    try {
+      await addConversationAccess({
+        conversationId: selectedConversation.id,
+        userId: targetUserId,
+      });
+
+      const [nextAccess, nextDirectory] = await Promise.all([
+        fetchConversationAccessState({
+          conversationId: selectedConversation.id,
+          clubId: selectedConversation.targetType === "club" ? selectedConversation.targetId : null,
+        }),
+        searchMessagingUsers({
+          search: directorySearch,
+          excludeUserIds: Array.from(new Set([...Array.from(existingAccessUserIds), targetUserId])),
+          currentUserId: userId,
+        }),
+      ]);
+
+      setAccessState(nextAccess);
+      setDirectoryUsers(nextDirectory);
+      setEmailAccess("");
+
+      toast({
+        title: "Access granted",
+        description: "This user can now open the chat.",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Could not grant access",
+        description: error instanceof Error ? error.message : "Please retry.",
+      });
+    } finally {
+      setAddingAccess(false);
+    }
+  };
+
+  const handleGrantAccessByEmail = async () => {
+    const normalized = emailAccess.trim().toLowerCase();
+    if (!normalized) return;
+
+    try {
+      const user = await findMessagingUserByEmail(normalized);
+      if (!user) {
+        toast({
+          variant: "destructive",
+          title: "No account found",
+          description: "Use Add Members or User Management first, then grant chat access here.",
+        });
+        return;
+      }
+
+      await handleGrantAccess(user.id);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Could not add by email",
+        description: error instanceof Error ? error.message : "Please retry.",
+      });
+    }
   };
 
   const selectedMeta = selectedConversation ? CATEGORY_META[selectedConversation.category] : null;
@@ -354,6 +577,18 @@ function Messaging() {
                 </div>
               );
             })}
+          </div>
+
+          <div className="mt-4 flex gap-2">
+            <Button
+              variant="outline"
+              className="h-10 flex-1 rounded-2xl border-slate-200 bg-white"
+              onClick={handleSyncClubPaths}
+              disabled={syncingClubPaths}
+            >
+              {syncingClubPaths ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Sync club channels
+            </Button>
           </div>
         </div>
 
@@ -543,6 +778,16 @@ function Messaging() {
                     </span>
                   </div>
                 </div>
+                {selectedConversation.targetType === "club" && (
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={() => setAccessDialogOpen(true)}
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Manage access
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -745,6 +990,204 @@ function Messaging() {
             <Button className="rounded-full px-5" onClick={handleStartConversation} disabled={!selectedRecipient || creatingConversation}>
               {creatingConversation && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Open chat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={accessDialogOpen}
+        onOpenChange={(open) => {
+          setAccessDialogOpen(open);
+          if (!open) {
+            setDirectorySearch("");
+            setEmailAccess("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl rounded-[28px] border-slate-200 p-0">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <DialogHeader>
+              <DialogTitle className="text-2xl tracking-tight">Manage chat access</DialogTitle>
+              <DialogDescription className="pt-1 text-sm text-slate-500">
+                Grant direct access to this club channel from the workspace user directory, or add an existing account by email.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="grid gap-6 px-6 py-5 lg:grid-cols-[1.05fr_0.95fr]">
+            <div className="space-y-5">
+              <section className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">Current access</p>
+                    <p className="mt-1 text-xs text-slate-500">Direct room members plus club-linked users already attached to this club.</p>
+                  </div>
+                </div>
+
+                {accessLoading ? (
+                  <div className="mt-4 space-y-2">
+                    {Array.from({ length: 4 }).map((_, index) => (
+                      <Skeleton key={index} className="h-14 w-full rounded-2xl" />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Direct room members</p>
+                      <div className="space-y-2">
+                        {accessState.directMembers.length === 0 ? (
+                          <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No direct room members yet.</p>
+                        ) : (
+                          accessState.directMembers.map((member) => (
+                            <div key={`direct-${member.id}`} className="flex items-center gap-3 rounded-2xl border bg-white px-3 py-3">
+                              <Avatar className="h-10 w-10 rounded-2xl">
+                                <AvatarImage src={member.avatarUrl ?? undefined} />
+                                <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                                  {(member.fullName || member.email || "U").slice(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-slate-950">{member.fullName || member.email || "Unnamed user"}</p>
+                                <p className="truncate text-xs text-slate-500">{member.email || "No email on file"}</p>
+                              </div>
+                              <div className="flex flex-wrap justify-end gap-1">
+                                {member.tags.map((tag) => (
+                                  <Badge key={tag} variant="secondary" className="rounded-full bg-slate-100 text-[11px] text-slate-600">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Club-linked access</p>
+                      <div className="space-y-2">
+                        {accessState.clubLinkedMembers.length === 0 ? (
+                          <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No linked club members or officers yet.</p>
+                        ) : (
+                          accessState.clubLinkedMembers.map((member) => (
+                            <div key={`linked-${member.id}`} className="flex items-center gap-3 rounded-2xl border bg-white px-3 py-3">
+                              <Avatar className="h-10 w-10 rounded-2xl">
+                                <AvatarImage src={member.avatarUrl ?? undefined} />
+                                <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                                  {(member.fullName || member.email || "U").slice(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-slate-950">{member.fullName || member.email || "Unnamed user"}</p>
+                                <p className="truncate text-xs text-slate-500">{member.email || "No email on file"}</p>
+                              </div>
+                              <div className="flex flex-wrap justify-end gap-1">
+                                {member.tags.map((tag) => (
+                                  <Badge key={tag} variant="secondary" className="rounded-full bg-slate-100 text-[11px] text-slate-600">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div className="space-y-5">
+              <section className="rounded-[24px] border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold text-slate-950">Add from User Management</p>
+                <p className="mt-1 text-xs text-slate-500">Search existing workspace users and grant this chat directly.</p>
+
+                <div className="relative mt-4">
+                  <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    value={directorySearch}
+                    onChange={(event) => setDirectorySearch(event.target.value)}
+                    placeholder="Search workspace users..."
+                    className="h-11 rounded-2xl border-slate-200 pl-10"
+                  />
+                </div>
+
+                <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+                  {directoryLoading ? (
+                    Array.from({ length: 4 }).map((_, index) => (
+                      <Skeleton key={index} className="h-14 w-full rounded-2xl" />
+                    ))
+                  ) : directoryUsers.length === 0 ? (
+                    <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No additional users match the current search.</p>
+                  ) : (
+                    directoryUsers.map((user) => (
+                      <div key={user.id} className="flex items-center gap-3 rounded-2xl border bg-slate-50/70 px-3 py-3">
+                        <Avatar className="h-10 w-10 rounded-2xl">
+                          <AvatarImage src={user.avatarUrl ?? undefined} />
+                          <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                            {(user.fullName || user.email || "U").slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-950">{user.fullName || user.email || "Unnamed user"}</p>
+                          <p className="truncate text-xs text-slate-500">{user.email || "No email on file"}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="rounded-full"
+                          onClick={() => handleGrantAccess(user.id)}
+                          disabled={addingAccess}
+                        >
+                          Add
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-[24px] border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold text-slate-950">Quick add by email</p>
+                <p className="mt-1 text-xs text-slate-500">Only existing workspace accounts can be granted directly here.</p>
+
+                <div className="mt-4 flex gap-2">
+                  <div className="relative flex-1">
+                    <Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      value={emailAccess}
+                      onChange={(event) => setEmailAccess(event.target.value)}
+                      placeholder="Enter an existing account email"
+                      className="h-11 rounded-2xl border-slate-200 pl-10"
+                    />
+                  </div>
+                  <Button className="rounded-full px-5" onClick={handleGrantAccessByEmail} disabled={addingAccess || !emailAccess.trim()}>
+                    Add email
+                  </Button>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-4">
+                  <p className="text-sm font-medium text-slate-700">Need to create or onboard the user first?</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Create the account or link them to the club first, then come back here to grant direct chat access.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button asChild variant="outline" className="rounded-full">
+                      <Link to="/users">Open User Management</Link>
+                    </Button>
+                    <Button asChild variant="outline" className="rounded-full">
+                      <Link to="/members/add">Open Add Members</Link>
+                    </Button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t border-slate-200 px-6 py-4">
+            <Button variant="outline" className="rounded-full" onClick={() => setAccessDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
