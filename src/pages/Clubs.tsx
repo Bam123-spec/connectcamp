@@ -2,18 +2,14 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
-  ArrowUpRight,
   Building2,
   CalendarClock,
-  CheckCircle2,
-  ClipboardList,
   Mail,
   MapPin,
   MessageSquare,
   Plus,
   Search,
   ShieldCheck,
-  Sparkles,
   Users,
 } from "lucide-react";
 import { format, isValid, parse } from "date-fns";
@@ -511,159 +507,150 @@ function Clubs() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_42%,#eff6ff_100%)] shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-        <div className="flex flex-col gap-6 px-6 py-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Club Operations</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Run clubs like an operational portfolio, not a static roster.</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              This view now shows which clubs are actually staffed, messaging-ready, and operationally covered. It should tell Student Life where to intervene, not just what exists.
-            </p>
-          </div>
-
-          <Sheet
-            open={sheetOpen}
-            onOpenChange={(open) => {
-              setSheetOpen(open);
-              if (!open) resetForm();
-            }}
-          >
-            <SheetTrigger asChild>
-              <Button className="rounded-full px-5">
-                <Plus className="h-4 w-4" />
-                Add club
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
-              <SheetHeader>
-                <SheetTitle>{editingClub ? "Edit club" : "Create a club"}</SheetTitle>
-                <p className="text-sm text-muted-foreground">
-                  {editingClub
-                    ? "Update the details, coverage state, and contact information for this club."
-                    : "Add a new club or prospect into the workspace with proper org-scoped metadata."}
-                </p>
-              </SheetHeader>
-              <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Club name *</label>
-                  <Input
-                    value={createForm.name}
-                    onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
-                    placeholder="Outdoor Adventure Society"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Club email</label>
-                  <Input
-                    type="email"
-                    value={createForm.email}
-                    onChange={(event) => setCreateForm((prev) => ({ ...prev, email: event.target.value }))}
-                    placeholder="club@montgomerycollege.edu"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Description</label>
-                  <Textarea
-                    value={createForm.description}
-                    onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))}
-                    placeholder="What is the club for, and why should Student Life care about it?"
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2 flex flex-col">
-                    <label className="text-sm font-medium text-foreground">Meeting day</label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
-                        >
-                          <CalendarClock className="mr-2 h-4 w-4" />
-                          {date ? format(date, "PPP") : <span>Pick a date</span>}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Meeting time</label>
-                    <TimePicker value={createForm.time} onChange={(value) => setCreateForm((prev) => ({ ...prev, time: value }))} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Room / location</label>
-                  <Input
-                    value={createForm.location}
-                    onChange={(event) => setCreateForm((prev) => ({ ...prev, location: event.target.value }))}
-                    placeholder="Student Center, Room 203"
-                  />
-                </div>
-                <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">Approved / official club</p>
-                      <p className="mt-1 text-sm text-slate-500">Turn this off to keep the club in the prospects pipeline until Student Life approves it.</p>
-                    </div>
-                    <Switch checked={createForm.approved} onCheckedChange={(checked) => setCreateForm((prev) => ({ ...prev, approved: checked }))} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Cover image</label>
-                  <ImageUpload value={logoUrl} onChange={setLogoUrl} bucket="club-logos" />
-                </div>
-                {createError && <p className="text-sm text-destructive">{createError}</p>}
-                <SheetFooter className="gap-3">
-                  <Button type="button" variant="outline" onClick={() => { setSheetOpen(false); resetForm(); }}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={submitting}>
-                    {submitting ? "Saving..." : editingClub ? "Save changes" : "Create club"}
-                  </Button>
-                </SheetFooter>
-              </form>
-            </SheetContent>
-          </Sheet>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-2xl">
+          <h2 className="text-3xl font-semibold tracking-tight text-slate-950">Club workspace</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Manage club records, spot coverage gaps, and jump to the right operational tool without digging through decorative cards.
+          </p>
         </div>
 
-        <div className="grid gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-6">
-          <KpiCard label="Total clubs" value={summary.total} helper="Active organizations in this workspace" icon={Building2} loading={loading} />
-          <KpiCard label="Approved" value={summary.approved} helper={`${summary.prospects} still in prospect status`} icon={CheckCircle2} loading={loading} />
-          <KpiCard label="Officer-covered" value={summary.withOfficers} helper={`${Math.max(summary.total - summary.withOfficers, 0)} clubs still unstaffed`} icon={ShieldCheck} loading={loading} />
-          <KpiCard label="Messaging-ready" value={summary.messagingReady} helper={`${Math.max(summary.total - summary.messagingReady, 0)} need club-side access`} icon={MessageSquare} loading={loading} />
-          <KpiCard label="Open tasks" value={summary.openTasks} helper="Tasks linked to club execution" icon={ClipboardList} loading={loading} />
-          <KpiCard label="Needs attention" value={summary.needsAttention} helper="Coverage, approval, or activity gaps" icon={AlertTriangle} loading={loading} />
-        </div>
-      </section>
+        <Sheet
+          open={sheetOpen}
+          onOpenChange={(open) => {
+            setSheetOpen(open);
+            if (!open) resetForm();
+          }}
+        >
+          <SheetTrigger asChild>
+            <Button className="rounded-full px-5">
+              <Plus className="h-4 w-4" />
+              Add club
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
+            <SheetHeader>
+              <SheetTitle>{editingClub ? "Edit club" : "Create a club"}</SheetTitle>
+              <p className="text-sm text-muted-foreground">
+                {editingClub
+                  ? "Update the details, coverage state, and contact information for this club."
+                  : "Add a new club or prospect into the workspace with proper org-scoped metadata."}
+              </p>
+            </SheetHeader>
+            <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Club name *</label>
+                <Input
+                  value={createForm.name}
+                  onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
+                  placeholder="Outdoor Adventure Society"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Club email</label>
+                <Input
+                  type="email"
+                  value={createForm.email}
+                  onChange={(event) => setCreateForm((prev) => ({ ...prev, email: event.target.value }))}
+                  placeholder="club@montgomerycollege.edu"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Description</label>
+                <Textarea
+                  value={createForm.description}
+                  onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))}
+                  placeholder="What is the club for, and why should Student Life care about it?"
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 flex flex-col">
+                  <label className="text-sm font-medium text-foreground">Meeting day</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
+                      >
+                        <CalendarClock className="mr-2 h-4 w-4" />
+                        {date ? format(date, "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Meeting time</label>
+                  <TimePicker value={createForm.time} onChange={(value) => setCreateForm((prev) => ({ ...prev, time: value }))} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Room / location</label>
+                <Input
+                  value={createForm.location}
+                  onChange={(event) => setCreateForm((prev) => ({ ...prev, location: event.target.value }))}
+                  placeholder="Student Center, Room 203"
+                />
+              </div>
+              <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Approved / official club</p>
+                    <p className="mt-1 text-sm text-slate-500">Turn this off to keep the club in the prospects pipeline until Student Life approves it.</p>
+                  </div>
+                  <Switch checked={createForm.approved} onCheckedChange={(checked) => setCreateForm((prev) => ({ ...prev, approved: checked }))} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Cover image</label>
+                <ImageUpload value={logoUrl} onChange={setLogoUrl} bucket="club-logos" />
+              </div>
+              {createError && <p className="text-sm text-destructive">{createError}</p>}
+              <SheetFooter className="gap-3">
+                <Button type="button" variant="outline" onClick={() => { setSheetOpen(false); resetForm(); }}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Saving..." : editingClub ? "Save changes" : "Create club"}
+                </Button>
+              </SheetFooter>
+            </form>
+          </SheetContent>
+        </Sheet>
+      </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_360px]">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <CompactKpiCard label="Total clubs" value={summary.total} helper={`${summary.approved} official`} icon={Building2} loading={loading} />
+        <CompactKpiCard label="Needs attention" value={summary.needsAttention} helper={`${Math.max(summary.total - summary.needsAttention, 0)} healthy`} icon={AlertTriangle} loading={loading} />
+        <CompactKpiCard label="Officer coverage" value={summary.withOfficers} helper={`${Math.max(summary.total - summary.withOfficers, 0)} missing officers`} icon={ShieldCheck} loading={loading} />
+        <CompactKpiCard label="Messaging ready" value={summary.messagingReady} helper={`${Math.max(summary.total - summary.messagingReady, 0)} need chat access`} icon={MessageSquare} loading={loading} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_320px]">
         <div className="space-y-6">
-          <Card className="rounded-[28px] border-slate-200 shadow-sm">
-            <CardHeader className="gap-4 border-b border-slate-200 pb-5">
+          <Card className="rounded-[24px] border-slate-200 shadow-sm">
+            <CardHeader className="gap-4 pb-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <CardTitle className="text-2xl tracking-tight">Club portfolio</CardTitle>
-                  <CardDescription className="mt-1">Search, filter, and intervene where club operations are thin.</CardDescription>
+                  <CardTitle className="text-2xl tracking-tight">Club list</CardTitle>
+                  <CardDescription className="mt-1">A simpler, action-first view of every club in the workspace.</CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
-                    <Link to="/clubs/manage">
-                      Open workspace
-                      <ArrowUpRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white text-slate-700">
                     <Link to="/officers">Officers</Link>
                   </Button>
-                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white text-slate-700">
+                    <Link to="/messaging">Messaging</Link>
+                  </Button>
+                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white text-slate-700">
                     <Link to="/tasks">Tasks</Link>
                   </Button>
                 </div>
               </div>
-
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
@@ -673,7 +660,7 @@ function Clubs() {
                     className="h-11 rounded-2xl border-slate-200 pl-10"
                   />
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 pt-1">
                   {FILTER_OPTIONS.map((option) => (
                     <Button
                       key={option.key}
@@ -691,14 +678,14 @@ function Clubs() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="pt-6">{content()}</CardContent>
+            <CardContent className="border-t border-slate-200 pt-4">{content()}</CardContent>
           </Card>
         </div>
 
         <div className="space-y-6">
           <SideListCard
-            title="Coverage watchlist"
-            description="Clubs that currently need Student Life intervention first."
+            title="Watchlist"
+            description="The first clubs that need action."
             emptyLabel="No clubs are currently flagged."
             items={attentionClubs.map((club) => ({
               id: club.id,
@@ -739,7 +726,7 @@ function Clubs() {
   );
 }
 
-function KpiCard({
+function CompactKpiCard({
   label,
   value,
   helper,
@@ -753,13 +740,94 @@ function KpiCard({
   loading: boolean;
 }) {
   return (
-    <div className="bg-white px-5 py-4">
-      <div className="flex items-center justify-between gap-3 text-slate-500">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
-        <Icon className="h-4 w-4" />
+    <Card className="rounded-[20px] border-slate-200 shadow-sm">
+      <CardContent className="px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
+            {loading ? <Skeleton className="mt-3 h-8 w-14" /> : <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>}
+            <p className="mt-1 text-sm text-slate-500">{helper}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5 text-slate-500">
+            <Icon className="h-4 w-4" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClubOperationalCard({ club, onEdit }: { club: ClubInsight; onEdit: () => void }) {
+  return (
+    <article className="rounded-[22px] border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start gap-4">
+            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+              {club.cover_image_url ? (
+                <img src={club.cover_image_url} alt={club.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-slate-400">
+                  <Building2 className="h-5 w-5" />
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-semibold tracking-tight text-slate-950">{club.name}</h3>
+                <Badge className={cn("rounded-full border-0", club.approved ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800")}>
+                  {club.approved ? "Official" : "Prospect"}
+                </Badge>
+                <StatusBadge tone={club.health} />
+              </div>
+              <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{club.description || "No club description has been added yet."}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {club.attentionReasons.length > 0 ? (
+                  club.attentionReasons.slice(0, 3).map((reason) => (
+                    <Badge key={reason} variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-slate-700">
+                      {reason}
+                    </Badge>
+                  ))
+                ) : (
+                  <Badge className="rounded-full border-0 bg-emerald-50 text-emerald-700">Operationally healthy</Badge>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <InfoPill icon={Users} label="Members" value={String(club.memberCount)} />
+            <InfoPill icon={ShieldCheck} label="Officers" value={String(club.officerCount)} />
+            <InfoPill icon={MessageSquare} label="Messaging" value={club.messagingReady ? "Ready" : "Setup needed"} />
+            <InfoPill icon={CalendarClock} label="Meeting" value={formatMeeting(club.day, club.time)} />
+            <InfoPill icon={MapPin} label="Location" value={club.location || "Location not set"} />
+            <InfoPill icon={Mail} label="Email" value={club.email || "No email on file"} />
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-row gap-2 lg:flex-col">
+          <Button variant="outline" size="sm" className="rounded-full border-slate-200" onClick={onEdit}>Edit</Button>
+          <Button asChild variant="outline" size="sm" className="rounded-full border-slate-200 bg-white">
+            <Link to={`/clubs/manage?id=${club.id}`}>Manage</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="rounded-full border-slate-200 bg-white text-slate-700">
+            <Link to="/messaging">Chat</Link>
+          </Button>
+        </div>
       </div>
-      {loading ? <Skeleton className="mt-3 h-8 w-16" /> : <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>}
-      <p className="mt-2 text-sm text-slate-500">{helper}</p>
+    </article>
+  );
+}
+
+function InfoPill({ icon: Icon, label, value }: { icon: typeof Building2; label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+        <Icon className="h-3.5 w-3.5" />
+        <span>{label}</span>
+      </div>
+      <p className="mt-1.5 text-sm font-medium text-slate-950">{value}</p>
     </div>
   );
 }
@@ -780,22 +848,22 @@ function SideListCard({
   actionLabel?: string;
 }) {
   return (
-    <Card className="rounded-[28px] border-slate-200 shadow-sm">
+    <Card className="rounded-[24px] border-slate-200 shadow-sm">
       <CardHeader>
-        <CardTitle className="text-xl tracking-tight">{title}</CardTitle>
+        <CardTitle className="text-lg tracking-tight">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {items.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">
+          <div className="rounded-[18px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-sm text-slate-500">
             {emptyLabel}
           </div>
         ) : (
           items.map((item) => (
-            <div key={item.id} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3">
+            <div key={item.id} className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-4 py-3">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{item.label}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold leading-5 text-slate-950">{item.label}</p>
                   <p className="mt-1 text-sm text-slate-500">{item.helper}</p>
                 </div>
                 <StatusBadge tone={item.tone} />
@@ -803,104 +871,13 @@ function SideListCard({
             </div>
           ))
         )}
-        {actionHref && actionLabel && (
+        {actionHref && actionLabel ? (
           <Button asChild variant="outline" className="w-full rounded-full border-slate-200 bg-white">
             <Link to={actionHref}>{actionLabel}</Link>
           </Button>
-        )}
+        ) : null}
       </CardContent>
     </Card>
-  );
-}
-
-function ClubOperationalCard({ club, onEdit }: { club: ClubInsight; onEdit: () => void }) {
-  return (
-    <article className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-      <div className="grid gap-0 md:grid-cols-[180px_minmax(0,1fr)]">
-        {club.cover_image_url ? (
-          <img src={club.cover_image_url} alt={club.name} className="h-full min-h-[180px] w-full object-cover" />
-        ) : (
-          <div className="flex min-h-[180px] items-center justify-center bg-[linear-gradient(135deg,#eff6ff_0%,#f8fafc_50%,#eef2ff_100%)] text-slate-500">
-            <div className="text-center">
-              <Sparkles className="mx-auto h-8 w-8" />
-              <p className="mt-3 text-sm font-medium">No cover image</p>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-5 px-5 py-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-xl font-semibold tracking-tight text-slate-950">{club.name}</h3>
-                <Badge className={cn("rounded-full border-0", club.approved ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800")}>
-                  {club.approved ? "Official" : "Prospect"}
-                </Badge>
-                <StatusBadge tone={club.health} />
-              </div>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{club.description || "No club description has been added yet."}</p>
-            </div>
-
-            <div className="flex flex-wrap gap-2 xl:justify-end">
-              <Button variant="outline" size="sm" className="rounded-full border-slate-200" onClick={onEdit}>Edit</Button>
-              <Button asChild variant="outline" size="sm" className="rounded-full border-slate-200 bg-white">
-                <Link to={`/clubs/manage?id=${club.id}`}>Manage</Link>
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricPill icon={Users} label="Members" value={String(club.memberCount)} />
-            <MetricPill icon={ShieldCheck} label="Officers" value={String(club.officerCount)} />
-            <MetricPill icon={MessageSquare} label="Messaging" value={club.messagingReady ? "Ready" : "Setup needed"} />
-            <MetricPill icon={ClipboardList} label="Open tasks" value={String(club.openTaskCount)} />
-          </div>
-
-          <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
-              <CalendarClock className="h-4 w-4 text-slate-400" />
-              <span>{formatMeeting(club.day, club.time)}</span>
-            </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
-              <MapPin className="h-4 w-4 text-slate-400" />
-              <span>{club.location || "Location not set"}</span>
-            </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
-              <Mail className="h-4 w-4 text-slate-400" />
-              <span>{club.email || "No club email on file"}</span>
-            </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
-              <Sparkles className="h-4 w-4 text-slate-400" />
-              <span>{club.upcomingEventCount} upcoming event{club.upcomingEventCount === 1 ? "" : "s"}</span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            {club.attentionReasons.length > 0 ? (
-              club.attentionReasons.map((reason) => (
-                <Badge key={reason} variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-slate-700">
-                  {reason}
-                </Badge>
-              ))
-            ) : (
-              <Badge className="rounded-full border-0 bg-emerald-50 text-emerald-700">Operationally healthy</Badge>
-            )}
-          </div>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function MetricPill({ icon: Icon, label, value }: { icon: typeof Building2; label: string; value: string }) {
-  return (
-    <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3">
-      <div className="flex items-center justify-between gap-2 text-slate-500">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
-        <Icon className="h-4 w-4" />
-      </div>
-      <p className="mt-2 text-lg font-semibold text-slate-950">{value}</p>
-    </div>
   );
 }
 
