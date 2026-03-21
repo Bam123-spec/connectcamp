@@ -74,16 +74,17 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
   };
 
   return (
-    <aside className={cn("hidden bg-[#18181b] md:block", className)}>
+    <aside className={cn("hidden md:block", className)}>
       <nav
         className={cn(
-          "flex h-full flex-col overflow-hidden border-r border-zinc-800 bg-[#18181b] p-3 text-zinc-400 shadow-xl transition-all duration-300 ease-in-out",
+          "relative flex h-full flex-col overflow-hidden border-r border-sky-200/80 bg-[linear-gradient(180deg,#edf6ff_0%,#e3f0ff_36%,#d9ebff_100%)] p-3 text-slate-600 shadow-[14px_0_40px_rgba(148,163,184,0.14)] transition-all duration-300 ease-in-out",
           open ? "w-64" : "w-20",
         )}
       >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.92),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(125,211,252,0.24),transparent_28%),radial-gradient(circle_at_80%_16%,rgba(59,130,246,0.12),transparent_22%)]" />
         <TitleSection open={open} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mb-3 space-y-1">
+        <div className="relative min-h-0 flex-1 overflow-y-auto">
+          <div className="mb-4 space-y-1">
             {primaryLinks.map((link) => (
               <Option
                 key={link.href}
@@ -95,10 +96,10 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
             ))}
           </div>
 
-          <div className="space-y-4 border-t border-zinc-800 pt-4">
-            <div>
+          <div className="space-y-4 border-t border-white/70 pt-4">
+            <div className="rounded-[22px] border border-white/60 bg-white/45 p-2 shadow-[0_10px_28px_rgba(148,163,184,0.1)] backdrop-blur-sm">
               {open && (
-                <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
                   Manage
                 </div>
               )}
@@ -115,9 +116,9 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
               </div>
             </div>
 
-            <div>
+            <div className="rounded-[22px] border border-white/60 bg-white/45 p-2 shadow-[0_10px_28px_rgba(148,163,184,0.1)] backdrop-blur-sm">
               {open && (
-                <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
                   Account
                 </div>
               )}
@@ -135,7 +136,7 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
                   type="button"
                   onClick={handleSignOut}
                   className={cn(
-                    "group relative flex h-10 w-full items-center rounded-md px-3 text-zinc-400 transition-all duration-200 hover:bg-white/5 hover:text-zinc-100",
+                    "group relative flex h-10 w-full items-center rounded-2xl px-3 text-slate-600 transition-all duration-200 hover:bg-white/75 hover:text-slate-950",
                     !open && "justify-center px-0",
                   )}
                   title={!open ? "Logout" : undefined}
@@ -183,17 +184,20 @@ const Option = ({
         const isPathActive = isActive || matchesSidebarPath(location.pathname, href);
 
         return cn(
-          "group relative flex h-10 w-full items-center rounded-md px-3 transition-all duration-200",
+          "group relative flex h-10 w-full items-center rounded-2xl px-3 transition-all duration-200",
           !open && "justify-center px-0",
           isPathActive
-            ? "bg-white/10 text-white shadow-sm"
-            : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100",
+            ? "bg-[linear-gradient(135deg,#2563eb_0%,#3b82f6_52%,#60a5fa_100%)] text-white shadow-[0_14px_30px_rgba(37,99,235,0.28)]"
+            : "text-slate-600 hover:bg-white/80 hover:text-slate-950",
         );
       }}
       title={!open ? title : undefined}
       aria-label={title}
     >
-      <div className="flex items-center justify-center">
+      <div className={cn(
+        "flex items-center justify-center rounded-xl transition-colors duration-200",
+        open ? "h-8 w-8" : "h-10 w-10",
+      )}>
         <Icon className="h-5 w-5" />
       </div>
       <div className={cn("flex flex-1 items-center overflow-hidden transition-all duration-300", open ? "ml-3 opacity-100" : "w-0 ml-0 opacity-0")}>
@@ -207,14 +211,17 @@ const Option = ({
 
 const TitleSection = ({ open }: { open: boolean }) => {
   return (
-    <div className={cn("px-1", open ? "mb-6" : "mb-4")}>
-      <div className={cn("flex items-center gap-3 overflow-hidden", !open && "justify-center")}>
+    <div className={cn("relative px-1", open ? "mb-5" : "mb-4")}>
+      <div className={cn(
+        "flex items-center gap-3 overflow-hidden rounded-[24px] border border-white/70 bg-white/60 px-3 py-3 shadow-[0_16px_36px_rgba(148,163,184,0.12)] backdrop-blur-sm",
+        !open && "justify-center px-2",
+      )}>
         <Logo />
         <div className={cn("flex flex-col transition-all duration-300", open ? "opacity-100" : "opacity-0 w-0")}>
-          <span className="text-base font-bold text-white tracking-tight whitespace-nowrap">
+          <span className="text-base font-bold text-slate-950 tracking-tight whitespace-nowrap">
             Connect Camp
           </span>
-          <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+          <span className="text-[10px] font-semibold text-sky-700/80 uppercase tracking-[0.24em] whitespace-nowrap">
             Admin Workspace
           </span>
         </div>
@@ -224,7 +231,7 @@ const TitleSection = ({ open }: { open: boolean }) => {
 };
 
 const Logo = () => (
-  <div className="grid size-9 shrink-0 place-content-center rounded-lg bg-white text-black shadow-sm ring-1 ring-white/20">
+  <div className="grid size-10 shrink-0 place-content-center rounded-[18px] bg-[linear-gradient(145deg,#0f172a_0%,#1d4ed8_58%,#38bdf8_100%)] text-white shadow-[0_12px_28px_rgba(37,99,235,0.32)] ring-1 ring-white/70">
     <svg
       viewBox="0 0 128 128"
       className="h-5 w-5"
@@ -233,7 +240,7 @@ const Logo = () => (
     >
       <rect width="128" height="128" rx="24" fill="currentColor" />
       <path
-        fill="#000"
+        fill="#082f49"
         d="M64 18c-25.4 0-46 20.6-46 46s20.6 46 46 46c11.2 0 21.8-4 30.1-11.4l-14-16.8A23 23 0 0 1 64 85c-13 0-23.6-10.6-23.6-23.7S51 37.5 64 37.5c7.7 0 14.7 3.7 19.2 9.6l13.9-16.7C88.7 22 76.8 18 64 18Z"
       />
       <circle cx="64" cy="61.3" r="11" fill="#fff" />
@@ -251,7 +258,7 @@ const ToggleClose = ({
   <button
     onClick={() => setOpen(!open)}
     className={cn(
-      "mt-3 flex h-11 items-center rounded-md border-t border-zinc-800 pt-3 text-zinc-500 transition-colors hover:text-zinc-300",
+      "relative mt-3 flex h-11 items-center rounded-[20px] border border-white/70 bg-white/60 px-2 text-slate-600 shadow-[0_12px_28px_rgba(148,163,184,0.12)] transition-colors hover:bg-white/85 hover:text-slate-950",
       open ? "justify-start" : "justify-center",
     )}
     aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
