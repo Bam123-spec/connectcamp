@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, useLocation, matchPath } from "react-rout
 import Login from "./pages/Login";
 import Clubs from "./pages/Clubs";
 import Events from "./pages/Events";
+import CalendarPage from "./pages/Calendar";
 import CreateEvent from "./pages/CreateEvent";
 import Dashboard from "./pages/Dashboard";
 import ManageClubsPage from "./pages/ManageClubsPage";
@@ -146,6 +147,14 @@ function AppLayout() {
               element={
                 <ProtectedRoute>
                   <Events />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/calendar"
+              element={
+                <ProtectedRoute>
+                  <CalendarPage />
                 </ProtectedRoute>
               }
             />

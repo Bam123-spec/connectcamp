@@ -471,12 +471,17 @@ function Events() {
               if (!open) resetForm();
             }}
           >
-            <SheetTrigger asChild>
-              <Button className="rounded-full px-5">
-                <Plus className="h-4 w-4" />
-                Create event
+            <div className="flex flex-wrap items-center gap-3">
+              <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                <Link to="/calendar">Open calendar</Link>
               </Button>
-            </SheetTrigger>
+              <SheetTrigger asChild>
+                <Button className="rounded-full px-5">
+                  <Plus className="h-4 w-4" />
+                  Create event
+                </Button>
+              </SheetTrigger>
+            </div>
             <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
               <SheetHeader>
                 <SheetTitle>{editingEvent ? "Edit event" : "Create event"}</SheetTitle>
@@ -609,6 +614,9 @@ function Events() {
                   <CardDescription className="mt-1">Filter for the events that need attention, not just the ones that already look complete.</CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                    <Link to="/calendar">Calendar view</Link>
+                  </Button>
                   <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
                     <Link to="/approvals">Pending approvals</Link>
                   </Button>

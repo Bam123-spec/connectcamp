@@ -2,6 +2,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
   CalendarDays,
+  CalendarRange,
   Users,
   UserCog,
   Settings,
@@ -31,6 +32,7 @@ export const primaryLinks: SidebarLink[] = [
   { label: "Clubs", href: "/clubs", icon: Building2 },
   { label: "Prospects", href: "/prospects", icon: Lightbulb },
   { label: "Events", href: "/events", icon: CalendarDays },
+  { label: "Calendar", href: "/calendar", icon: CalendarRange },
 ];
 
 export const manageLinks: SidebarLink[] = [

@@ -22,6 +22,7 @@ const pageDescriptions: Record<string, string> = {
   "/clubs": "Manage rosters, onboarding, and applications.",
   "/prospects": "Run onboarding workflow for emerging clubs.",
   "/events": "Review programming across every club.",
+  "/calendar": "Plan month and week scheduling across Student Life.",
   "/officers": "Track leadership and staffing changes.",
   "/approvals": "Run review workflow for clubs and events.",
   "/settings": "Adjust platform preferences and access.",
