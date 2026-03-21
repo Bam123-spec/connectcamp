@@ -77,7 +77,7 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
       >
         <TitleSection open={open} />
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mb-4 space-y-1">
+          <div className="mb-3 space-y-1">
             {primaryLinks.map((link) => (
               <Option
                 key={link.href}
@@ -89,7 +89,7 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
             ))}
           </div>
 
-          <div className="space-y-6 border-t border-zinc-800 pt-6">
+          <div className="space-y-4 border-t border-zinc-800 pt-4">
             <div>
               {open && (
                 <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
@@ -201,8 +201,8 @@ const Option = ({
 
 const TitleSection = ({ open }: { open: boolean }) => {
   return (
-    <div className="mb-8 px-1">
-      <div className="flex items-center gap-3 overflow-hidden">
+    <div className={cn("px-1", open ? "mb-6" : "mb-4")}>
+      <div className={cn("flex items-center gap-3 overflow-hidden", !open && "justify-center")}>
         <Logo />
         <div className={cn("flex flex-col transition-all duration-300", open ? "opacity-100" : "opacity-0 w-0")}>
           <span className="text-base font-bold text-white tracking-tight whitespace-nowrap">

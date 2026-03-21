@@ -15,11 +15,14 @@ import { supabase } from "@/lib/supabaseClient";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
 import { Users, Building2, CalendarDays, ShieldCheck, AlertTriangle, Activity } from "lucide-react";
 import { AnalyticsChatbot } from "@/components/AnalyticsChatbot";
+import { useAuth } from "@/context/AuthContext";
+import { listForms, resolveFormsOrgId } from "@/lib/formsDataApi";
 
 type ClubRow = {
   id: string;
   name: string;
   description: string | null;
+  org_id?: string | null;
   created_at?: string | null;
   location?: string | null;
   day?: string | null;
@@ -58,7 +61,9 @@ type PostRow = {
 
 type FormSubmissionRow = {
   id: string;
+  form_id?: string | null;
   created_at?: string | null;
+  submitted_at?: string | null;
 };
 
 type ChartPoint = {
@@ -92,13 +97,84 @@ const weekFormatter = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
 });
 
-async function fetchOptionalTable<T>(table: string, columns: string) {
-  const { data, error } = await supabase.from(table).select(columns);
-  if (error) {
-    console.warn(`[Analytics] ${table} unavailable`, error.message);
-    return [] as T[];
+function isSchemaError(error: { code?: string; message?: string } | null | undefined) {
+  if (!error) return false;
+  return (
+    error.code === "42703" ||
+    error.code === "42P01" ||
+    error.code === "PGRST204" ||
+    error.code === "PGRST205" ||
+    error.message?.toLowerCase().includes("does not exist") === true
+  );
+}
+
+async function fetchOptionalTable<T>(table: string, columns: string, apply?: (query: any) => any) {
+  let query = supabase.from(table).select(columns);
+  if (apply) {
+    query = apply(query);
   }
-  return (data as T[]) ?? [];
+
+  const { data, error } = await query;
+  if (!error) {
+    return {
+      data: (data as T[]) ?? [],
+      missing: false,
+    };
+  }
+
+  if (isSchemaError(error)) {
+    return {
+      data: [] as T[],
+      missing: true,
+    };
+  }
+
+  throw error;
+}
+
+function parseDateValue(value?: string | null) {
+  if (!value) return null;
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00`)
+    : new Date(value);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getDateFromKey(key: string) {
+  return new Date(`${key}T12:00:00`);
+}
+
+async function fetchScopedClubs(orgId: string | null) {
+  const scopedQuery = orgId
+    ? supabase
+        .from("clubs")
+        .select("id,name,created_at,category,approved,is_active,org_id")
+        .eq("org_id", orgId)
+    : supabase.from("clubs").select("id,name,created_at,category,approved,is_active,org_id");
+
+  const scopedResult = await scopedQuery;
+  if (!scopedResult.error) {
+    return (scopedResult.data ?? []) as ClubRow[];
+  }
+
+  if (!orgId || !isSchemaError(scopedResult.error)) {
+    throw scopedResult.error;
+  }
+
+  const fallback = await supabase
+    .from("clubs")
+    .select("id,name,created_at,category,approved,is_active");
+
+  if (fallback.error) throw fallback.error;
+  return (fallback.data ?? []) as ClubRow[];
 }
 
 function getWeekStart(date: Date) {
@@ -111,6 +187,7 @@ function getWeekStart(date: Date) {
 }
 
 const Analytics = () => {
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,6 +215,7 @@ const Analytics = () => {
   const [engagement, setEngagement] = useState<EngagementPoint[]>([]);
   const [formTrend, setFormTrend] = useState<ChartPoint[]>([]);
   const [newMembersTrend, setNewMembersTrend] = useState<ChartPoint[]>([]);
+  const orgId = useMemo(() => resolveFormsOrgId(profile?.org_id), [profile?.org_id]);
 
   useEffect(() => {
     let active = true;
@@ -157,35 +235,90 @@ const Analytics = () => {
         const last60DaysStart = new Date(now);
         last60DaysStart.setUTCDate(last60DaysStart.getUTCDate() - 59);
 
+        const clubs = await fetchScopedClubs(orgId);
+        const clubIds = clubs.map((club) => club.id);
+
         const [
-          { data: clubsData = [] },
-          { data: membersData = [] },
-          { data: eventsData = [] },
-          { data: officersData = [] },
-          postsData,
-          formData,
+          membersResult,
+          eventsResult,
+          officersResult,
+          postsResult,
+          forms,
         ] = await Promise.all([
-          supabase.from("clubs").select("id,name,created_at,category,approved,is_active"),
-          supabase.from("club_members").select("id,club_id,user_id,created_at"),
-          supabase.from("events").select("id,club_id,event_date,created_at,approved"),
-          supabase.from("officers").select("id,club_id,approved"),
-          fetchOptionalTable<PostRow>("posts", "id,club_id,created_at"),
-          fetchOptionalTable<FormSubmissionRow>("form_submissions", "id,created_at"),
+          clubIds.length
+            ? supabase
+                .from("club_members")
+                .select("id,club_id,user_id,created_at")
+                .in("club_id", clubIds)
+            : Promise.resolve({ data: [] as MemberRow[], error: null }),
+          clubIds.length
+            ? supabase
+                .from("events")
+                .select("id,club_id,event_date,created_at,approved")
+                .in("club_id", clubIds)
+            : Promise.resolve({ data: [] as EventRow[], error: null }),
+          clubIds.length
+            ? supabase
+                .from("officers")
+                .select("id,club_id,approved")
+                .in("club_id", clubIds)
+            : Promise.resolve({ data: [] as OfficerRow[], error: null }),
+          clubIds.length
+            ? fetchOptionalTable<PostRow>("posts", "id,club_id,created_at", (query) =>
+                query.in("club_id", clubIds)
+              )
+            : Promise.resolve({ data: [] as PostRow[], missing: true }),
+          listForms(orgId),
         ]);
+
+        if (membersResult.error) throw membersResult.error;
+        if (eventsResult.error) throw eventsResult.error;
+        if (officersResult.error) throw officersResult.error;
 
         if (!active) return;
 
-        const clubs = (clubsData as ClubRow[]) ?? [];
-        const members = (membersData as MemberRow[]) ?? [];
-        const events = (eventsData as EventRow[]) ?? [];
-        const officers = (officersData as OfficerRow[]) ?? [];
+        const members = (membersResult.data as MemberRow[]) ?? [];
+        const events = (eventsResult.data as EventRow[]) ?? [];
+        const officers = (officersResult.data as OfficerRow[]) ?? [];
+        const postsData = postsResult.data;
+        const formIds = forms.map((form) => form.id);
+
+        let formRows: FormSubmissionRow[] = [];
+        if (formIds.length) {
+          const responsesResult = await supabase
+            .from("form_responses")
+            .select("id, form_id, created_at")
+            .in("form_id", formIds);
+
+          if (!responsesResult.error) {
+            formRows = ((responsesResult.data ?? []) as FormSubmissionRow[]).map((row) => ({
+              id: row.id,
+              form_id: row.form_id ?? null,
+              created_at: row.created_at ?? null,
+            }));
+          } else if (isSchemaError(responsesResult.error)) {
+            const legacyResult = await fetchOptionalTable<FormSubmissionRow>(
+              "form_submissions",
+              "id, form_id, submitted_at",
+              (query) => query.in("form_id", formIds)
+            );
+
+            formRows = legacyResult.data.map((row) => ({
+              id: row.id,
+              form_id: row.form_id ?? null,
+              created_at: row.submitted_at ?? row.created_at ?? null,
+            }));
+          } else {
+            throw responsesResult.error;
+          }
+        }
 
         // --- Basic Stats ---
         const totalClubs = clubs.length;
         const activeClubs = clubs.filter((club) => {
           if (typeof club.is_active === "boolean") return club.is_active;
           if (typeof club.approved === "boolean") return club.approved;
-          return true;
+          return false;
         }).length;
 
         const uniqueMemberIds = new Set(members.map((member) => member.user_id || member.id));
@@ -194,7 +327,8 @@ const Analytics = () => {
         const eventsThisWeek = events.filter((event) => {
           const dateValue = event.event_date || event.created_at;
           if (!dateValue) return false;
-          const date = new Date(dateValue);
+          const date = parseDateValue(dateValue);
+          if (!date) return false;
           return date >= startOfWeek && date < endOfWeek;
         }).length;
 
@@ -202,7 +336,8 @@ const Analytics = () => {
 
         const newMembersLast7 = members.filter((member) => {
           if (!member.created_at) return false;
-          const date = new Date(member.created_at);
+          const date = parseDateValue(member.created_at);
+          if (!date) return false;
           return date >= last7DaysStart && date <= now;
         }).length;
 
@@ -211,20 +346,24 @@ const Analytics = () => {
         // 1. At-Risk Clubs: 0 events AND 0 posts in last 60 days
         const recentActivityMap = new Map<string, boolean>();
         events.forEach(e => {
-          const d = new Date(e.event_date || e.created_at || "");
-          if (d >= last60DaysStart && e.club_id) recentActivityMap.set(e.club_id, true);
+          const dateValue = parseDateValue(e.event_date || e.created_at || null);
+          if (dateValue && dateValue >= last60DaysStart && e.club_id) recentActivityMap.set(e.club_id, true);
         });
         postsData.forEach(p => {
-          const d = new Date(p.created_at || "");
-          if (d >= last60DaysStart && p.club_id) recentActivityMap.set(p.club_id, true);
+          const dateValue = parseDateValue(p.created_at);
+          if (dateValue && dateValue >= last60DaysStart && p.club_id) recentActivityMap.set(p.club_id, true);
         });
 
         const atRiskClubs = clubs.filter(c => !recentActivityMap.has(c.id)).length;
 
         // 2. Active Member Rate (Proxy: Members in active clubs / Total Members)
         // Since we don't have attendance, we'll define "Active Member" as belonging to a club with recent activity
-        const membersInActiveClubs = members.filter(m => m.club_id && recentActivityMap.has(m.club_id)).length;
-        const activeMemberRate = totalMembers > 0 ? Math.round((membersInActiveClubs / members.length) * 100) : 0;
+        const engagedMembers = new Set(
+          members
+            .filter((member) => member.club_id && recentActivityMap.has(member.club_id))
+            .map((member) => member.user_id || member.id)
+        );
+        const activeMemberRate = totalMembers > 0 ? Math.round((engagedMembers.size / totalMembers) * 100) : 0;
 
         // 3. Officer Vacancy Rate: Clubs with < 2 active officers
         const officerCountMap = new Map<string, number>();
@@ -247,7 +386,8 @@ const Analytics = () => {
         });
 
         const ghostClubs = clubs.filter(c => {
-          const created = new Date(c.created_at || "");
+          const created = parseDateValue(c.created_at);
+          if (!created) return false;
           const ageDays = (now.getTime() - created.getTime()) / (1000 * 3600 * 24);
           const memberCount = clubMemberCountMap.get(c.id) || 0;
           const eventCount = clubEventCountMap.get(c.id) || 0;
@@ -281,7 +421,7 @@ const Analytics = () => {
         for (let i = 0; i < 7; i += 1) {
           const current = new Date(last7DaysStart);
           current.setUTCDate(last7DaysStart.getUTCDate() + i);
-          const key = current.toISOString().split("T")[0];
+          const key = getDateKey(current);
           engagementMap.set(key, {
             label: dateFormatter.format(current),
             events: 0,
@@ -293,8 +433,9 @@ const Analytics = () => {
         events.forEach((event) => {
           const dateValue = event.event_date || event.created_at;
           if (!dateValue) return;
-          const date = new Date(dateValue);
-          const key = date.toISOString().split("T")[0];
+          const date = parseDateValue(dateValue);
+          if (!date) return;
+          const key = getDateKey(date);
           if (engagementMap.has(key)) {
             engagementMap.get(key)!.events += 1;
           }
@@ -302,8 +443,9 @@ const Analytics = () => {
 
         members.forEach((member) => {
           if (!member.created_at) return;
-          const date = new Date(member.created_at);
-          const key = date.toISOString().split("T")[0];
+          const date = parseDateValue(member.created_at);
+          if (!date) return;
+          const key = getDateKey(date);
           if (engagementMap.has(key)) {
             engagementMap.get(key)!.newMembers += 1;
           }
@@ -311,8 +453,9 @@ const Analytics = () => {
 
         postsData.forEach((post) => {
           if (!post.created_at) return;
-          const date = new Date(post.created_at);
-          const key = date.toISOString().split("T")[0];
+          const date = parseDateValue(post.created_at);
+          if (!date) return;
+          const key = getDateKey(date);
           if (engagementMap.has(key)) {
             engagementMap.get(key)!.posts += 1;
           }
@@ -353,7 +496,7 @@ const Analytics = () => {
             healthStatus
           };
         })
-          .sort((a, b) => b.memberCount - a.memberCount)
+          .sort((a, b) => b.healthScore - a.healthScore || b.memberCount - a.memberCount)
           .slice(0, 5);
 
         setTopClubs(topClubList);
@@ -390,7 +533,7 @@ const Analytics = () => {
         for (let i = 0; i < 30; i += 1) {
           const current = new Date(last30DaysStart);
           current.setUTCDate(last30DaysStart.getUTCDate() + i);
-          const key = current.toISOString().split("T")[0];
+          const key = getDateKey(current);
           memberGrowthMap.set(key, 0);
           if (i >= 23) {
             newMembersTrendMap.set(key, 0);
@@ -399,8 +542,9 @@ const Analytics = () => {
 
         members.forEach((member) => {
           if (!member.created_at) return;
-          const date = new Date(member.created_at);
-          const key = date.toISOString().split("T")[0];
+          const date = parseDateValue(member.created_at);
+          if (!date) return;
+          const key = getDateKey(date);
           if (memberGrowthMap.has(key)) {
             memberGrowthMap.set(key, (memberGrowthMap.get(key) ?? 0) + 1);
           }
@@ -411,13 +555,13 @@ const Analytics = () => {
 
         setMemberGrowth(
           Array.from(memberGrowthMap.entries()).map(([key, value]) => ({
-            label: dateFormatter.format(new Date(key)),
+            label: dateFormatter.format(getDateFromKey(key)),
             value,
           })),
         );
         setNewMembersTrend(
           Array.from(newMembersTrendMap.entries()).map(([key, value]) => ({
-            label: dateFormatter.format(new Date(key)),
+            label: dateFormatter.format(getDateFromKey(key)),
             value,
           })),
         );
@@ -426,13 +570,15 @@ const Analytics = () => {
         for (let i = 0; i < 30; i += 1) {
           const current = new Date(last30DaysStart);
           current.setUTCDate(last30DaysStart.getUTCDate() + i);
-          const key = current.toISOString().split("T")[0];
+          const key = getDateKey(current);
           newClubMap.set(key, 0);
         }
 
         clubs.forEach((club) => {
           if (!club.created_at) return;
-          const key = new Date(club.created_at).toISOString().split("T")[0];
+          const created = parseDateValue(club.created_at);
+          if (!created) return;
+          const key = getDateKey(created);
           if (newClubMap.has(key)) {
             newClubMap.set(key, (newClubMap.get(key) ?? 0) + 1);
           }
@@ -440,7 +586,7 @@ const Analytics = () => {
 
         setNewClubs(
           Array.from(newClubMap.entries()).map(([key, value]) => ({
-            label: dateFormatter.format(new Date(key)),
+            label: dateFormatter.format(getDateFromKey(key)),
             value,
           })),
         );
@@ -449,47 +595,51 @@ const Analytics = () => {
         const weekEventMap = new Map<string, number>();
         members.forEach((member) => {
           if (!member.created_at) return;
-          const date = new Date(member.created_at);
-          const week = getWeekStart(date).toISOString().split("T")[0];
+          const date = parseDateValue(member.created_at);
+          if (!date) return;
+          const week = getDateKey(getWeekStart(date));
           weekMemberMap.set(week, (weekMemberMap.get(week) ?? 0) + 1);
         });
         events.forEach((event) => {
           const dateValue = event.event_date || event.created_at;
           if (!dateValue) return;
-          const date = new Date(dateValue);
-          const week = getWeekStart(date).toISOString().split("T")[0];
+          const date = parseDateValue(dateValue);
+          if (!date) return;
+          const week = getDateKey(getWeekStart(date));
           weekEventMap.set(week, (weekEventMap.get(week) ?? 0) + 1);
         });
 
         setWeeklyActiveMembers(
           Array.from(weekMemberMap.entries())
-            .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+            .sort((a, b) => getDateFromKey(a[0]).getTime() - getDateFromKey(b[0]).getTime())
             .map(([key, value]) => ({
-              label: weekFormatter.format(new Date(key)),
+              label: weekFormatter.format(getDateFromKey(key)),
               value,
             })),
         );
         setWeeklyEvents(
           Array.from(weekEventMap.entries())
-            .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+            .sort((a, b) => getDateFromKey(a[0]).getTime() - getDateFromKey(b[0]).getTime())
             .map(([key, value]) => ({
-              label: weekFormatter.format(new Date(key)),
+              label: weekFormatter.format(getDateFromKey(key)),
               value,
             })),
         );
 
-        if (formData.length) {
+        if (formRows.length) {
           const formMap = new Map<string, number>();
-          formData.forEach((form) => {
+          formRows.forEach((form) => {
             if (!form.created_at) return;
-            const key = new Date(form.created_at).toISOString().split("T")[0];
+            const created = parseDateValue(form.created_at);
+            if (!created) return;
+            const key = getDateKey(created);
             formMap.set(key, (formMap.get(key) ?? 0) + 1);
           });
           setFormTrend(
             Array.from(formMap.entries())
-              .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+              .sort((a, b) => getDateFromKey(a[0]).getTime() - getDateFromKey(b[0]).getTime())
               .map(([key, value]) => ({
-                label: dateFormatter.format(new Date(key)),
+                label: dateFormatter.format(getDateFromKey(key)),
                 value,
               })),
           );
@@ -507,7 +657,7 @@ const Analytics = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [orgId]);
 
   const statCards = useMemo(
     () => [
@@ -524,7 +674,7 @@ const Analytics = () => {
         value: stats.totalMembers.toLocaleString(),
         icon: Users,
         description: `${stats.newMembers7Days} joined last 7 days`,
-        insight: `${stats.activeMemberRate}% active participation`,
+        insight: `${stats.activeMemberRate}% belong to clubs active in the last 60 days`,
         insightColor: "text-green-600",
       },
       {
@@ -617,8 +767,8 @@ const Analytics = () => {
 
       <section className="grid gap-4 lg:grid-cols-2">
         <LineChartCard
-          title="Weekly Active Members"
-          description="Members who joined a club recently"
+          title="Weekly New Members"
+          description="New club memberships grouped by week"
           data={weeklyActiveMembers}
           loading={loading}
         />
@@ -648,7 +798,7 @@ const Analytics = () => {
         {formTrend.length ? (
           <LineChartCard
             title="Form Submissions"
-            description="If applicable forms table is present"
+            description="Responses submitted across admin forms"
             data={formTrend}
             loading={loading}
           />
