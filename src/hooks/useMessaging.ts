@@ -193,6 +193,9 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
             lastMessageAt: message.createdAt,
             updatedAt: message.createdAt,
             unreadCount: 0,
+            adminMemberCount: target.adminMemberCount,
+            clubMemberCount: target.clubMemberCount,
+            needsAttention: target.needsAttention,
           };
 
           return [updated, ...prev.filter((conversation) => conversation.id !== selectedConversationId)];
@@ -269,6 +272,9 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
               lastMessageAt: inserted.created_at,
               updatedAt: inserted.created_at,
               unreadCount,
+              adminMemberCount: target.adminMemberCount,
+              clubMemberCount: target.clubMemberCount,
+              needsAttention: target.needsAttention,
             };
 
             return [updated, ...prev.filter((conversation) => conversation.id !== inserted.conversation_id)];
@@ -296,6 +302,18 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
 
             await markSelectedConversationRead(inserted.conversation_id);
           }
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "admin_conversation_members",
+          filter: `user_id=eq.${userId}`,
+        },
+        async () => {
+          await refreshConversations();
         },
       )
       .on(

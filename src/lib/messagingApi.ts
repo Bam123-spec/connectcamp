@@ -32,6 +32,9 @@ export type ConversationSummary = {
   updatedAt: string;
   preview: string;
   unreadCount: number;
+  adminMemberCount: number;
+  clubMemberCount: number;
+  needsAttention: boolean;
 };
 
 export type ConversationMessage = {
@@ -187,16 +190,46 @@ export async function getMessagingBackend(): Promise<MessagingBackend> {
   return "dedicated";
 }
 
-async function fetchUnreadCount(conversationId: string, lastReadAt: string, userId: string) {
-  const { count, error } = await supabase
-    .from("admin_messages")
-    .select("id", { count: "exact", head: true })
-    .eq("conversation_id", conversationId)
-    .gt("created_at", lastReadAt)
-    .neq("sender_id", userId);
+async function fetchUnreadCounts(params: {
+  conversationIds: string[];
+  userId: string;
+}) {
+  const { conversationIds, userId } = params;
+  if (conversationIds.length === 0) return new Map<string, number>();
 
-  if (error) throw error;
-  return count ?? 0;
+  const readsResult = await supabase
+    .from("admin_message_reads")
+    .select("conversation_id, last_read_at")
+    .eq("user_id", userId)
+    .in("conversation_id", conversationIds);
+
+  if (readsResult.error) throw readsResult.error;
+
+  const readsMap = new Map<string, string>();
+  ((readsResult.data ?? []) as MessageReadRow[]).forEach((row) =>
+    readsMap.set(row.conversation_id, row.last_read_at ?? EPOCH_ISO),
+  );
+
+  const messagesResult = await supabase
+    .from("admin_messages")
+    .select("conversation_id, sender_id, created_at")
+    .in("conversation_id", conversationIds)
+    .neq("sender_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (messagesResult.error) throw messagesResult.error;
+
+  const counts = new Map<string, number>();
+  ((messagesResult.data ?? []) as Pick<AdminMessageRow, "conversation_id" | "sender_id" | "created_at">[]).forEach(
+    (row) => {
+      const threshold = readsMap.get(row.conversation_id) ?? EPOCH_ISO;
+      if (row.created_at > threshold) {
+        counts.set(row.conversation_id, (counts.get(row.conversation_id) ?? 0) + 1);
+      }
+    },
+  );
+
+  return counts;
 }
 
 export async function fetchConversationSummaries(params: {
@@ -220,7 +253,7 @@ export async function fetchConversationSummaries(params: {
 
   if (conversationIds.length === 0) return [] as ConversationSummary[];
 
-  const [conversationsResult, membersResult, latestMessagesResult, readsResult] = await Promise.all([
+  const [conversationsResult, membersResult, latestMessagesResult, unreadCounts] = await Promise.all([
     supabase
       .from("admin_conversations")
       .select("id, org_id, type, club_id, updated_at, last_message_at, subject")
@@ -237,17 +270,12 @@ export async function fetchConversationSummaries(params: {
       .select("conversation_id, sender_id, body, created_at")
       .in("conversation_id", conversationIds)
       .order("created_at", { ascending: false }),
-    supabase
-      .from("admin_message_reads")
-      .select("conversation_id, last_read_at")
-      .eq("user_id", userId)
-      .in("conversation_id", conversationIds),
+    fetchUnreadCounts({ conversationIds, userId }),
   ]);
 
   if (conversationsResult.error) throw conversationsResult.error;
   if (membersResult.error) throw membersResult.error;
   if (latestMessagesResult.error) throw latestMessagesResult.error;
-  if (readsResult.error) throw readsResult.error;
 
   const conversations = (conversationsResult.data ?? []) as AdminConversationRow[];
   const memberRows = (membersResult.data ?? []) as AdminConversationMemberRow[];
@@ -257,7 +285,6 @@ export async function fetchConversationSummaries(params: {
     body: string | null;
     created_at: string;
   }[];
-  const readRows = (readsResult.data ?? []) as MessageReadRow[];
 
   const membersByConversation = new Map<string, AdminConversationMemberRow[]>();
   memberRows.forEach((row) => {
@@ -272,9 +299,6 @@ export async function fetchConversationSummaries(params: {
       latestByConversation.set(row.conversation_id, row);
     }
   });
-
-  const readsMap = new Map<string, string>();
-  readRows.forEach((row) => readsMap.set(row.conversation_id, row.last_read_at ?? EPOCH_ISO));
 
   const profileIds = Array.from(new Set(memberRows.map((row) => row.user_id)));
   const clubIds = Array.from(
@@ -304,22 +328,12 @@ export async function fetchConversationSummaries(params: {
   const clubsMap = new Map<string, ClubRow>();
   ((clubsResult.data ?? []) as ClubRow[]).forEach((row) => clubsMap.set(row.id, row));
 
-  const unreadCounts = new Map<string, number>();
-  await Promise.all(
-    conversations.map(async (conversation) => {
-      const unread = await fetchUnreadCount(
-        conversation.id,
-        readsMap.get(conversation.id) ?? EPOCH_ISO,
-        userId,
-      );
-      unreadCounts.set(conversation.id, unread);
-    }),
-  );
-
   const term = search.trim().toLowerCase();
 
   const summaries = conversations.map((conversation) => {
     const members = membersByConversation.get(conversation.id) ?? [];
+    const adminMemberCount = members.filter((member) => member.role === "admin").length;
+    const clubMemberCount = members.filter((member) => member.role === "club").length;
     const targetClubId =
       conversation.club_id ??
       members.find((member) => member.role === "club" && member.club_id)?.club_id ??
@@ -361,8 +375,14 @@ export async function fetchConversationSummaries(params: {
       avatarUrl,
       lastMessageAt,
       updatedAt: conversation.updated_at,
-      preview: normalizePreview(latest?.body),
+      preview:
+        !latest?.body && targetClubId && clubMemberCount === 0
+          ? "No club-side account is linked yet. Add access before expecting replies."
+          : normalizePreview(latest?.body),
       unreadCount: unreadCounts.get(conversation.id) ?? 0,
+      adminMemberCount,
+      clubMemberCount,
+      needsAttention: Boolean(targetClubId && clubMemberCount === 0),
     } satisfies ConversationSummary;
   });
 
@@ -488,11 +508,8 @@ export async function fetchRecipientOptions(params: {
       .from("clubs")
       .select("id, name, cover_image_url, approved, org_id")
       .eq("approved", wantsApproved)
+      .eq("org_id", orgId)
       .order("name", { ascending: true });
-
-    if (orgId) {
-      query = query.or(`org_id.eq.${orgId},org_id.is.null`);
-    }
 
     const clubsResult = await query;
     if (clubsResult.error) throw clubsResult.error;
@@ -513,6 +530,7 @@ export async function fetchRecipientOptions(params: {
     .from("profiles")
     .select("id, full_name, email, role, avatar_url")
     .in("role", ADMIN_ROLES)
+    .eq("org_id", orgId)
     .neq("id", currentUserId)
     .order("full_name", { ascending: true });
 
@@ -579,15 +597,17 @@ export async function syncClubMessagingPaths() {
 }
 
 export async function searchMessagingUsers(params: {
+  orgId: string;
   search: string;
   excludeUserIds?: string[];
   currentUserId?: string | null;
 }) {
-  const { search, excludeUserIds = [], currentUserId = null } = params;
+  const { orgId, search, excludeUserIds = [], currentUserId = null } = params;
 
   const result = await supabase
     .from("profiles")
-    .select("id, full_name, email, avatar_url, role, club_id")
+    .select("id, full_name, email, avatar_url, role, club_id, org_id")
+    .eq("org_id", orgId)
     .order("full_name", { ascending: true })
     .limit(100);
 
@@ -607,13 +627,17 @@ export async function searchMessagingUsers(params: {
     });
 }
 
-export async function findMessagingUserByEmail(email: string) {
-  const normalized = email.trim().toLowerCase();
+export async function findMessagingUserByEmail(params: {
+  orgId: string;
+  email: string;
+}) {
+  const normalized = params.email.trim().toLowerCase();
   if (!normalized) return null;
 
   const result = await supabase
     .from("profiles")
-    .select("id, full_name, email, avatar_url, role, club_id")
+    .select("id, full_name, email, avatar_url, role, club_id, org_id")
+    .eq("org_id", params.orgId)
     .ilike("email", normalized)
     .maybeSingle();
 

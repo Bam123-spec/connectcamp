@@ -7,7 +7,7 @@ create index if not exists admin_conversations_club_idx
 update public.admin_conversations ac
 set club_id = source.club_id
 from (
-  select conversation_id, max(club_id) as club_id
+  select conversation_id, min(club_id::text)::uuid as club_id
   from public.admin_conversation_members
   where club_id is not null
   group by conversation_id

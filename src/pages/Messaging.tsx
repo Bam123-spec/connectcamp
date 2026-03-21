@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { Link } from "react-router-dom";
 import {
+  AlertTriangle,
   Building2,
   Lightbulb,
   Loader2,
@@ -350,6 +351,7 @@ function Messaging() {
     const timeoutId = window.setTimeout(async () => {
       try {
         const nextUsers = await searchMessagingUsers({
+          orgId,
           search: directorySearch,
           excludeUserIds: Array.from(existingAccessUserIds),
           currentUserId: userId,
@@ -373,7 +375,7 @@ function Messaging() {
       active = false;
       window.clearTimeout(timeoutId);
     };
-  }, [accessDialogOpen, directorySearch, existingAccessUserIds, toast, userId]);
+  }, [accessDialogOpen, directorySearch, existingAccessUserIds, orgId, toast, userId]);
 
   const handleMessagesScroll = () => {
     const container = messagesContainerRef.current;
@@ -463,12 +465,15 @@ function Messaging() {
         userId: targetUserId,
       });
 
+      await refreshConversations();
+
       const [nextAccess, nextDirectory] = await Promise.all([
         fetchConversationAccessState({
           conversationId: selectedConversation.id,
           clubId: selectedConversation.targetType === "club" ? selectedConversation.targetId : null,
         }),
         searchMessagingUsers({
+          orgId,
           search: directorySearch,
           excludeUserIds: Array.from(new Set([...Array.from(existingAccessUserIds), targetUserId])),
           currentUserId: userId,
@@ -499,7 +504,10 @@ function Messaging() {
     if (!normalized) return;
 
     try {
-      const user = await findMessagingUserByEmail(normalized);
+      const user = await findMessagingUserByEmail({
+        orgId,
+        email: normalized,
+      });
       if (!user) {
         toast({
           variant: "destructive",
@@ -520,6 +528,9 @@ function Messaging() {
   };
 
   const selectedMeta = selectedConversation ? CATEGORY_META[selectedConversation.category] : null;
+  const selectedConversationNeedsAccess =
+    selectedConversation?.targetType === "club" &&
+    selectedConversation.clubMemberCount === 0;
 
   return (
     <div className="flex h-[calc(100vh-6rem)] overflow-hidden rounded-[28px] border border-slate-200 bg-background shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
@@ -669,10 +680,22 @@ function Messaging() {
 
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold">{conversation.title}</p>
+                                  <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <p className="truncate text-sm font-semibold">{conversation.title}</p>
+                                        {conversation.needsAttention && (
+                                          <span className={cn(
+                                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                            active ? "bg-white/15 text-white" : "bg-amber-100 text-amber-800",
+                                          )}>
+                                            Setup needed
+                                          </span>
+                                        )}
+                                      </div>
                                       <p className={cn("mt-1 text-xs", active ? "text-slate-300" : "text-slate-500")}>
-                                        {CATEGORY_META[conversation.category].summaryText}
+                                        {conversation.needsAttention
+                                          ? "No club-side member linked yet"
+                                          : CATEGORY_META[conversation.category].summaryText}
                                       </p>
                                     </div>
                                     <div className="shrink-0 text-right">
@@ -770,6 +793,12 @@ function Messaging() {
                     <span>{selectedMeta.subtitle}</span>
                     <span className="text-slate-300">•</span>
                     <span>
+                      {selectedConversation.targetType === "club"
+                        ? `${selectedConversation.clubMemberCount} club-side ${selectedConversation.clubMemberCount === 1 ? "member" : "members"}`
+                        : `${selectedConversation.adminMemberCount} admin participants`}
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span>
                       {selectedConversation.lastMessageAt
                         ? `Last activity ${formatDistanceToNowStrict(new Date(selectedConversation.lastMessageAt), {
                             addSuffix: true,
@@ -808,6 +837,26 @@ function Messaging() {
                   className="h-full overflow-y-auto px-6 py-5"
                 >
                   <div className="mx-auto w-full max-w-4xl space-y-5">
+                    {selectedConversationNeedsAccess && (
+                      <div className="rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-4 text-left shadow-sm">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-amber-200 bg-white text-amber-700">
+                            <AlertTriangle className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-amber-950">This club chat is not reachable from the club side yet.</p>
+                            <p className="mt-1 text-sm leading-6 text-amber-900/80">
+                              The conversation exists for this club, but no officer or linked club account has access yet. Add access before expecting replies.
+                            </p>
+                          </div>
+                          <Button variant="outline" className="rounded-full border-amber-300 bg-white" onClick={() => setAccessDialogOpen(true)}>
+                            <UserPlus className="mr-2 h-4 w-4" />
+                            Add access
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     {hasMoreMessages && (
                       <div className="flex justify-center">
                         <Button
@@ -1024,6 +1073,12 @@ function Messaging() {
                     <p className="mt-1 text-xs text-slate-500">Direct room members plus club-linked users already attached to this club.</p>
                   </div>
                 </div>
+
+                {selectedConversationNeedsAccess && (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    No club-side participant is linked yet. This thread will stay admin-only until you add an officer or a club account.
+                  </div>
+                )}
 
                 {accessLoading ? (
                   <div className="mt-4 space-y-2">
