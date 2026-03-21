@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import {
   DEFAULT_ALERT_SETTINGS,
   DEFAULT_WORKSPACE_SETTINGS,
@@ -88,6 +89,10 @@ function looksLikeUrl(value: string) {
 function formatTimestamp(value: string | null) {
   if (!value) return "Not saved yet";
   return new Date(value).toLocaleString();
+}
+
+function getChangedKeys<T extends Record<string, unknown>>(previous: T, next: T) {
+  return Object.keys(next).filter((key) => JSON.stringify(previous[key]) !== JSON.stringify(next[key]));
 }
 
 async function fetchWorkspaceStats(orgId: string): Promise<WorkspaceStats> {
@@ -288,6 +293,21 @@ function Settings() {
     await refreshProfile(session.user.id);
     setSavedDisplayName(displayName);
     setSavedAvatarUrl(avatarUrl);
+    void logAuditEventSafe({
+      orgId,
+      category: "settings",
+      action: "profile_updated",
+      entityType: "profile",
+      entityId: session.user.id,
+      title: "Admin profile updated",
+      summary: `${displayName || accountEmail} updated their admin profile.`,
+      metadata: {
+        changed_fields: [
+          ...(displayName !== savedDisplayName ? ["display_name"] : []),
+          ...(avatarUrl !== savedAvatarUrl ? ["avatar_url"] : []),
+        ],
+      },
+    });
     toast({ title: "Profile updated", description: "Your admin profile settings were saved." });
   };
 
@@ -323,6 +343,7 @@ function Settings() {
 
     setSavingWorkspace(true);
     try {
+      const changedFields = getChangedKeys(savedWorkspaceSettings, workspaceSettings);
       const result = await upsertWorkspaceSettings({
         orgId,
         updatedBy: session.user.id,
@@ -339,6 +360,20 @@ function Settings() {
         orgId,
         workspaceSettings: result.workspaceSettings,
         alertSettings: result.alertSettings,
+      });
+
+      void logAuditEventSafe({
+        orgId,
+        category: "settings",
+        action: "workspace_settings_updated",
+        entityType: "workspace_settings",
+        title: "Workspace defaults updated",
+        summary: `${workspaceSettings.organizationName} defaults were updated in Settings.`,
+        metadata: {
+          changed_fields: changedFields,
+          compact_sidebar_default: result.workspaceSettings.compactSidebarDefault,
+          school_email_domain: result.workspaceSettings.schoolEmailDomain,
+        },
       });
 
       toast({
@@ -368,6 +403,7 @@ function Settings() {
 
     setSavingAlerts(true);
     try {
+      const changedFields = getChangedKeys(savedAlertSettings, alertSettings);
       const result = await upsertWorkspaceSettings({
         orgId,
         updatedBy: session.user.id,
@@ -384,6 +420,19 @@ function Settings() {
         orgId,
         workspaceSettings: result.workspaceSettings,
         alertSettings: result.alertSettings,
+      });
+
+      void logAuditEventSafe({
+        orgId,
+        category: "settings",
+        action: "alert_settings_updated",
+        entityType: "workspace_settings",
+        title: "Alert routing updated",
+        summary: "Operational alert preferences were changed.",
+        metadata: {
+          changed_fields: changedFields,
+          enabled_alerts: ALERT_ITEMS.filter((item) => result.alertSettings[item.key]).map((item) => item.key),
+        },
       });
 
       toast({
@@ -418,6 +467,16 @@ function Settings() {
       return;
     }
 
+    void logAuditEventSafe({
+      orgId,
+      category: "security",
+      action: "password_reset_requested",
+      entityType: "profile",
+      entityId: session?.user?.id ?? null,
+      title: "Password reset triggered",
+      summary: `A password reset email was sent to ${accountEmail}.`,
+      metadata: { account_email: accountEmail },
+    });
     toast({ title: "Reset email sent", description: `Password reset instructions were sent to ${accountEmail}.` });
   };
 
@@ -431,6 +490,15 @@ function Settings() {
       return;
     }
 
+    void logAuditEventSafe({
+      orgId,
+      category: "security",
+      action: "global_sign_out",
+      entityType: "workspace_settings",
+      title: "Global sign-out executed",
+      summary: "All active admin sessions were revoked from Settings.",
+      metadata: { triggered_by: accountEmail },
+    });
     toast({ title: "Signed out everywhere", description: "All active sessions were revoked." });
     await signOut();
     navigate("/login");
@@ -705,6 +773,12 @@ function Settings() {
                 <Link to="/forms">
                   <Building2 className="h-4 w-4" />
                   Open Forms
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="w-full justify-start rounded-2xl border-slate-200 bg-white">
+                <Link to="/audit-log">
+                  <ShieldCheck className="h-4 w-4" />
+                  Open Audit Log
                 </Link>
               </Button>
             </CardContent>

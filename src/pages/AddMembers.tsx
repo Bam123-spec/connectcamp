@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
+import { logAuditEventSafe } from "@/lib/auditApi";
 
 type ClubOption = {
   id: string;
@@ -31,6 +33,7 @@ const generateTempPassword = () => {
 
 function AddMembers() {
   const { toast } = useToast();
+  const { profile } = useAuth();
   const [clubs, setClubs] = useState<ClubOption[]>([]);
   const [clubsLoading, setClubsLoading] = useState(true);
   const [clubsError, setClubsError] = useState<string | null>(null);
@@ -193,6 +196,20 @@ function AddMembers() {
     setMemberSubmitting(true);
     try {
       await addMemberFlow(memberEmail, memberClubId);
+      const selectedClub = clubs.find((club) => club.id === memberClubId);
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "members",
+        action: "club_member_added",
+        entityType: "club",
+        entityId: memberClubId,
+        title: "Club member added",
+        summary: `${memberEmail.trim()} was added to ${selectedClub?.name ?? "the selected club"}.`,
+        metadata: {
+          club_name: selectedClub?.name ?? null,
+          member_email: memberEmail.trim().toLowerCase(),
+        },
+      });
       toast({
         title: "Member added",
         description: `${memberEmail.trim()} is now part of the selected club.`,
@@ -218,6 +235,21 @@ function AddMembers() {
     setOfficerSubmitting(true);
     try {
       await addOfficerFlow(officerEmail, officerClubId, officerRole);
+      const selectedClub = clubs.find((club) => club.id === officerClubId);
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "members",
+        action: "officer_added",
+        entityType: "club",
+        entityId: officerClubId,
+        title: "Officer added",
+        summary: `${officerEmail.trim()} was added as ${displayRole(officerRole)} for ${selectedClub?.name ?? "the selected club"}.`,
+        metadata: {
+          club_name: selectedClub?.name ?? null,
+          officer_email: officerEmail.trim().toLowerCase(),
+          officer_role: officerRole,
+        },
+      });
       toast({
         title: "Officer added",
         description: `${officerEmail.trim()} is now ${displayRole(officerRole)}.`,
@@ -342,6 +374,20 @@ function AddMembers() {
         description: `${success} added, ${errors.length} failed.`,
       });
     }
+
+    void logAuditEventSafe({
+      orgId: profile?.org_id,
+      category: "members",
+      action: "officer_bulk_import_processed",
+      entityType: "officer_import",
+      title: "Officer bulk import processed",
+      summary: `${success} officer rows imported, ${errors.length} failed.`,
+      metadata: {
+        file_name: bulkFileName || null,
+        success_count: success,
+        failed_count: errors.length,
+      },
+    });
 
     setBulkProcessing(false);
   };

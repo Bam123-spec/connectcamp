@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import {
   addApprovalComment,
   assignApprovalRequest,
@@ -364,10 +365,42 @@ function PendingApprovals() {
     [admins],
   );
 
-  const runAction = async (key: string, action: () => Promise<void>, successTitle: string, successDescription: string, clearNotes = false) => {
+  const runAction = async (
+    key: string,
+    action: () => Promise<void>,
+    successTitle: string,
+    successDescription: string,
+    clearNotes = false,
+    auditEvent?: {
+      action: string;
+      title: string;
+      summary: string;
+      metadata?: Record<string, unknown>;
+    },
+    auditRequest?: ApprovalRequestRow | null,
+  ) => {
     setActioning(key);
     try {
       await action();
+      const requestForAudit = auditRequest ?? selectedRequest;
+      if (requestForAudit && auditEvent) {
+        void logAuditEventSafe({
+          orgId,
+          category: "approvals",
+          action: auditEvent.action,
+          entityType: requestForAudit.entity_type,
+          entityId: requestForAudit.entity_id,
+          title: auditEvent.title,
+          summary: auditEvent.summary,
+          metadata: {
+            request_id: requestForAudit.id,
+            queue: requestForAudit.queue,
+            status: requestForAudit.status,
+            priority: requestForAudit.priority,
+            ...(auditEvent.metadata ?? {}),
+          },
+        });
+      }
       toast({ title: successTitle, description: successDescription });
       if (clearNotes) {
         setDecisionNote("");
@@ -390,6 +423,16 @@ function PendingApprovals() {
       "Approval updated",
       `${selectedRequest.title} is now ${formatStatusLabel(nextStatus).toLowerCase()}.`,
       true,
+      {
+        action: "approval_status_updated",
+        title: "Approval status updated",
+        summary: `${selectedRequest.title} moved to ${formatStatusLabel(nextStatus).toLowerCase()}.`,
+        metadata: {
+          from_status: selectedRequest.status,
+          to_status: nextStatus,
+          decision_note: decisionNote.trim() || null,
+        },
+      },
     );
   };
 
@@ -401,6 +444,16 @@ function PendingApprovals() {
       "Priority updated",
       `${selectedRequest.title} is now ${formatPriorityLabel(nextPriority).toLowerCase()} priority.`,
       true,
+      {
+        action: "approval_priority_updated",
+        title: "Approval priority updated",
+        summary: `${selectedRequest.title} is now ${formatPriorityLabel(nextPriority).toLowerCase()} priority.`,
+        metadata: {
+          previous_priority: selectedRequest.priority,
+          next_priority: nextPriority,
+          note: decisionNote.trim() || null,
+        },
+      },
     );
   };
 
@@ -414,6 +467,16 @@ function PendingApprovals() {
       "Assignment updated",
       assigneeId ? `${selectedRequest.title} has been assigned.` : `${selectedRequest.title} is now unassigned.`,
       true,
+      {
+        action: "approval_assignment_updated",
+        title: "Approval assignee updated",
+        summary: assigneeId ? `${selectedRequest.title} was assigned for review.` : `${selectedRequest.title} was moved back to the unassigned queue.`,
+        metadata: {
+          previous_assignee: selectedRequest.assigned_to,
+          next_assignee: assigneeId,
+          note: decisionNote.trim() || null,
+        },
+      },
     );
   };
 
@@ -425,6 +488,14 @@ function PendingApprovals() {
       "Note added",
       `Internal note saved on ${selectedRequest.title}.`,
       true,
+      {
+        action: "approval_note_added",
+        title: "Approval note added",
+        summary: `An internal approval note was added to ${selectedRequest.title}.`,
+        metadata: {
+          note_length: commentDraft.trim().length,
+        },
+      },
     );
   };
 
@@ -499,7 +570,18 @@ function PendingApprovals() {
                           `assign-self:${request.id}`,
                           () => assignApprovalRequest(request.id, userId),
                           "Assigned to you",
-                          `${request.title} is now in your queue.`
+                          `${request.title} is now in your queue.`,
+                          false,
+                          {
+                            action: "approval_assignment_updated",
+                            title: "Approval assigned to reviewer",
+                            summary: `${request.title} was assigned to the current reviewer.`,
+                            metadata: {
+                              previous_assignee: request.assigned_to,
+                              next_assignee: userId,
+                            },
+                          },
+                          request,
                         );
                       }}
                     >

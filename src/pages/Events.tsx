@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/lib/utils";
 
@@ -319,18 +320,37 @@ function Events() {
       };
 
       let saveError: { message?: string } | null = null;
+      let savedEventId: string | null = editingEvent?.id ?? null;
       if (editingEvent) {
-        const { error: updateError } = await supabase.from("events").update(payload).eq("id", editingEvent.id);
+        const { data, error: updateError } = await supabase.from("events").update(payload).eq("id", editingEvent.id).select("id").single();
         saveError = updateError;
+        savedEventId = (data as { id: string } | null)?.id ?? editingEvent.id;
       } else {
-        const { error: insertError } = await supabase.from("events").insert({ ...payload, created_at: new Date().toISOString() });
+        const { data, error: insertError } = await supabase.from("events").insert({ ...payload, created_at: new Date().toISOString() }).select("id").single();
         saveError = insertError;
+        savedEventId = (data as { id: string } | null)?.id ?? null;
       }
 
       if (saveError) {
         throw new Error(saveError.message ?? `Unable to ${editingEvent ? "update" : "create"} event.`);
       }
 
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "events",
+        action: editingEvent ? "event_updated" : "event_created",
+        entityType: "event",
+        entityId: savedEventId,
+        title: editingEvent ? "Event updated" : "Event created",
+        summary: `${payload.name} ${editingEvent ? "was updated in" : "was added to"} the events workspace.`,
+        metadata: {
+          status: formState.status,
+          location: payload.location,
+          date: payload.date,
+          time: payload.time,
+          club_id: payload.club_id,
+        },
+      });
       toast({
         title: `Event ${editingEvent ? "updated" : "created"}`,
         description: `${payload.name} is now part of the event workspace.`,
@@ -361,6 +381,20 @@ function Events() {
       return;
     }
 
+    const currentEvent = events.find((event) => event.id === eventId);
+    void logAuditEventSafe({
+      orgId: profile?.org_id,
+      category: "events",
+      action: "event_approval_state_updated",
+      entityType: "event",
+      entityId: eventId,
+      title: approved ? "Event approved" : "Event moved to pending",
+      summary: `${currentEvent?.name ?? "Event"} is now ${approved ? "approved" : "back in pending review"}.`,
+      metadata: {
+        approved,
+        previous_approved: currentEvent?.approved ?? null,
+      },
+    });
     toast({
       title: approved ? "Event approved" : "Moved to pending",
       description: approved ? "The event is now marked approved." : "The event has been moved back to pending review.",

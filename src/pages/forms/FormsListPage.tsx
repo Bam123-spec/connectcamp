@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { QrCodeDialog } from "@/components/forms/QrCodeDialog";
 import type { Form } from "@/types/forms";
 import { useAuth } from "@/context/AuthContext";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import {
   deleteForm,
   duplicateForm,
@@ -178,8 +179,22 @@ export default function FormsListPage() {
 
     try {
       setBusyFormId(id);
+      const existingForm = forms.find((form) => form.id === id);
       await deleteForm(id);
       setForms((prev) => prev.filter((form) => form.id !== id));
+      void logAuditEventSafe({
+        orgId: resolveFormsOrgId(profile?.org_id),
+        category: "forms",
+        action: "form_deleted",
+        entityType: "form",
+        entityId: id,
+        title: "Form deleted",
+        summary: `${existingForm?.title ?? "A form"} was deleted from the forms workspace.`,
+        metadata: {
+          access_type: existingForm?.access_type ?? null,
+          was_active: existingForm?.is_active ?? null,
+        },
+      });
       toast({
         title: "Form deleted",
         description: "The form has been successfully deleted.",
@@ -201,6 +216,19 @@ export default function FormsListPage() {
       setBusyFormId(form.id);
       await updateFormActiveState(form.id, nextActive);
       setForms((prev) => prev.map((entry) => (entry.id === form.id ? { ...entry, is_active: nextActive } : entry)));
+      void logAuditEventSafe({
+        orgId: resolveFormsOrgId(profile?.org_id),
+        category: "forms",
+        action: "form_status_updated",
+        entityType: "form",
+        entityId: form.id,
+        title: nextActive ? "Form activated" : "Form deactivated",
+        summary: `${form.title} is now ${nextActive ? "accepting responses" : "closed to new responses"}.`,
+        metadata: {
+          previous_is_active: form.is_active,
+          next_is_active: nextActive,
+        },
+      });
       toast({
         title: nextActive ? "Form activated" : "Form deactivated",
         description: nextActive
@@ -228,6 +256,20 @@ export default function FormsListPage() {
       setBusyFormId(form.id);
       const duplicated = await duplicateForm(form.id, profile?.id ?? null, resolveFormsOrgId(profile?.org_id));
       setForms((prev) => [duplicated, ...prev]);
+      void logAuditEventSafe({
+        orgId: resolveFormsOrgId(profile?.org_id),
+        category: "forms",
+        action: "form_duplicated",
+        entityType: "form",
+        entityId: duplicated.id,
+        title: "Form duplicated",
+        summary: `${form.title} was duplicated into a new draft form.`,
+        metadata: {
+          source_form_id: form.id,
+          source_form_title: form.title,
+          duplicated_form_title: duplicated.title,
+        },
+      });
       toast({
         title: "Form duplicated",
         description: "A draft copy of this form has been created.",

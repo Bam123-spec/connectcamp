@@ -4,6 +4,7 @@ import { CalendarClock, ChevronLeft, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -69,7 +70,7 @@ function CreateEvent() {
 
     setSaving(true);
 
-    const { error: supabaseError } = await supabase.from("events").insert({
+    const { data, error: supabaseError } = await supabase.from("events").insert({
       name: name.trim(),
       description: description.trim() || null,
       date: date ? format(date, "yyyy-MM-dd") : null,
@@ -79,7 +80,7 @@ function CreateEvent() {
       club_id: clubId === "workspace" ? null : clubId,
       approved: status === "approved" ? true : null,
       created_at: new Date().toISOString(),
-    });
+    }).select("id").single();
 
     setSaving(false);
 
@@ -88,6 +89,22 @@ function CreateEvent() {
       return;
     }
 
+    void logAuditEventSafe({
+      orgId,
+      category: "events",
+      action: "event_created",
+      entityType: "event",
+      entityId: (data as { id: string } | null)?.id ?? null,
+      title: "Event created",
+      summary: `${name.trim()} was created from the dedicated event setup page.`,
+      metadata: {
+        status,
+        club_id: clubId === "workspace" ? null : clubId,
+        location: location.trim() || null,
+        date: date ? format(date, "yyyy-MM-dd") : null,
+        time: time.trim() || null,
+      },
+    });
     navigate("/events");
   };
 

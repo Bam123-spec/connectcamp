@@ -25,6 +25,7 @@ const pageDescriptions: Record<string, string> = {
   "/calendar": "Plan month and week scheduling across Student Life.",
   "/officers": "Track leadership and staffing changes.",
   "/approvals": "Run review workflow for clubs and events.",
+  "/audit-log": "Review the operator history across approvals, staffing, settings, and workflow changes.",
   "/settings": "Adjust platform preferences and access.",
   "/support": "Get help, troubleshooting, and contact options.",
 };

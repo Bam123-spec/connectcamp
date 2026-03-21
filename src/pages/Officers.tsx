@@ -20,7 +20,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import { supabase } from "@/lib/supabaseClient";
 
 type OfficerRole = "president" | "vice_president" | "treasurer" | "secretary";
@@ -97,6 +99,7 @@ const formatRoleLabel = (role: OfficerRole | null) => {
 };
 
 function Officers() {
+  const { profile } = useAuth();
   const { toast } = useToast();
   const [officers, setOfficers] = useState<OfficerRow[]>([]);
   const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
@@ -276,6 +279,21 @@ function Officers() {
       if (deleteError) throw deleteError;
 
       setOfficers((prev) => prev.filter((row) => row.id !== officer.id));
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "officers",
+        action: "officer_removed",
+        entityType: "officer",
+        entityId: officer.id,
+        title: "Officer removed",
+        summary: `${officer.name} was removed from ${officer.clubName}.`,
+        metadata: {
+          club_name: officer.clubName,
+          officer_name: officer.name,
+          officer_email: officer.email,
+          role: officer.role,
+        },
+      });
       toast({
         title: "Officer removed",
         description: `${officer.name} is no longer listed as an officer for ${officer.clubName}.`,
@@ -296,6 +314,21 @@ function Officers() {
       if (updateError) throw updateError;
 
       setOfficers((prev) => prev.map((row) => (row.id === officer.id ? { ...row, role: nextRole } : row)));
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "officers",
+        action: "officer_role_updated",
+        entityType: "officer",
+        entityId: officer.id,
+        title: "Officer role updated",
+        summary: `${officer.name} is now ${formatRoleLabel(nextRole)} for ${officer.clubName}.`,
+        metadata: {
+          club_name: officer.clubName,
+          officer_name: officer.name,
+          previous_role: officer.role,
+          next_role: nextRole,
+        },
+      });
       toast({
         title: "Officer updated",
         description: `${officer.name} is now ${formatRoleLabel(nextRole)} for ${officer.clubName}.`,
@@ -324,6 +357,20 @@ function Officers() {
       if (addMemberResult.error) throw addMemberResult.error;
 
       setOfficers((prev) => prev.map((row) => (row.id === officer.id ? { ...row, inAdminChat: true } : row)));
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "messaging",
+        action: "officer_added_to_chat",
+        entityType: "officer",
+        entityId: officer.id,
+        title: "Officer connected to club chat",
+        summary: `${officer.name} was granted access to the admin thread for ${officer.clubName}.`,
+        metadata: {
+          club_name: officer.clubName,
+          officer_name: officer.name,
+          conversation_id: conversationResult.data,
+        },
+      });
       toast({
         title: "Officer connected to chat",
         description: `${officer.name} can now access the club admin thread for ${officer.clubName}.`,
@@ -361,6 +408,18 @@ function Officers() {
       }
 
       setOfficers((prev) => prev.map((row) => (pending.some((officer) => officer.id === row.id) ? { ...row, inAdminChat: true } : row)));
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "messaging",
+        action: "officer_chat_sync_run",
+        entityType: "admin_conversation",
+        title: "Officer chat access synced",
+        summary: `${connected} officer accounts were added to club admin threads.`,
+        metadata: {
+          connected_count: connected,
+          pending_count: pending.length,
+        },
+      });
       toast({
         title: "Officer chat access synced",
         description: `${connected} officer ${connected === 1 ? "account was" : "accounts were"} added to their club admin threads.`,

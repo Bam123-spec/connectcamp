@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import {
   addTaskComment,
   createTask,
@@ -189,6 +190,21 @@ export default function Tasks() {
     });
 
     setTasks((prev) => sortTasks([newTask, ...prev]));
+    void logAuditEventSafe({
+      orgId: profile?.org_id,
+      category: "tasks",
+      action: "task_created",
+      entityType: "task",
+      entityId: newTask.id,
+      title: "Task created",
+      summary: `${newTask.title} was added to the task workspace.`,
+      metadata: {
+        status: newTask.status,
+        priority: newTask.priority,
+        club_name: newTask.club?.name ?? null,
+        assigned_to: newTask.assigned_to_profile?.email ?? null,
+      },
+    });
     toast({
       title: "Task created",
       description: "The coordination task has been added to the workspace.",
@@ -208,6 +224,21 @@ export default function Tasks() {
     if (!editingTask) return;
     const updated = await updateTask(editingTask.id, payload);
     syncTaskInState(updated);
+    void logAuditEventSafe({
+      orgId: profile?.org_id,
+      category: "tasks",
+      action: "task_updated",
+      entityType: "task",
+      entityId: updated.id,
+      title: "Task updated",
+      summary: `${updated.title} was updated in the task workspace.`,
+      metadata: {
+        status: updated.status,
+        priority: updated.priority,
+        club_name: updated.club?.name ?? null,
+        assigned_to: updated.assigned_to_profile?.email ?? null,
+      },
+    });
     toast({
       title: "Task updated",
       description: "The task details and ownership were updated.",
@@ -225,6 +256,20 @@ export default function Tasks() {
         setDetailTask(null);
         setDetailComments([]);
       }
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "tasks",
+        action: "task_deleted",
+        entityType: "task",
+        entityId: task.id,
+        title: "Task deleted",
+        summary: `${task.title} was removed from the task workspace.`,
+        metadata: {
+          status: task.status,
+          priority: task.priority,
+          club_name: task.club?.name ?? null,
+        },
+      });
       toast({
         title: "Task deleted",
         description: "The task and its collaboration thread were removed.",
@@ -242,6 +287,19 @@ export default function Tasks() {
     try {
       const updated = await setTaskStatus(task.id, status);
       syncTaskInState(updated);
+      void logAuditEventSafe({
+        orgId: profile?.org_id,
+        category: "tasks",
+        action: "task_status_updated",
+        entityType: "task",
+        entityId: updated.id,
+        title: "Task status changed",
+        summary: `${updated.title} moved to ${STATUS_LABELS[status].toLowerCase()}.`,
+        metadata: {
+          previous_status: task.status,
+          next_status: status,
+        },
+      });
       toast({
         title: "Status updated",
         description: `Task moved to ${STATUS_LABELS[status].toLowerCase()}.`,
@@ -262,6 +320,18 @@ export default function Tasks() {
 
     const comment = await addTaskComment(detailTask.id, profile.id, body);
     setDetailComments((prev) => [...prev, comment]);
+    void logAuditEventSafe({
+      orgId: profile?.org_id,
+      category: "tasks",
+      action: "task_comment_added",
+      entityType: "task",
+      entityId: detailTask.id,
+      title: "Task comment added",
+      summary: `A comment was added to ${detailTask.title}.`,
+      metadata: {
+        comment_length: body.trim().length,
+      },
+    });
     toast({
       title: "Comment posted",
       description: "The task thread has been updated.",

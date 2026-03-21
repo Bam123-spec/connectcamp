@@ -16,6 +16,7 @@ import {
   Lightbulb,
   BarChart3,
   ClipboardList,
+  History,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ export const manageLinks: SidebarLink[] = [
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Forms", href: "/forms", icon: ClipboardList },
   { label: "Approvals", href: "/approvals", icon: ClipboardCheck },
+  { label: "Audit Log", href: "/audit-log", icon: History },
   { label: "Tasks", href: "/tasks", icon: ClipboardList },
   { label: "Messaging", href: "/messaging", icon: MessageSquare },
   { label: "Officers", href: "/officers", icon: Users },

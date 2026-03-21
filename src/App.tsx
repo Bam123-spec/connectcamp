@@ -28,6 +28,7 @@ import FormResponsesPage from "./pages/forms/FormResponsesPage";
 import PublicFormPage from "./pages/public/PublicFormPage";
 import UserManagement from "./pages/UserManagement";
 import PendingApprovals from "./pages/PendingApprovals";
+import AuditLog from "./pages/AuditLog";
 
 const SIDEBAR_COMPACT_STORAGE_KEY = "cc.sidebar.compact.default";
 
@@ -268,6 +269,14 @@ function AppLayout() {
               element={
                 <ProtectedRoute>
                   <PendingApprovals />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/audit-log"
+              element={
+                <ProtectedRoute>
+                  <AuditLog />
                 </ProtectedRoute>
               }
             />

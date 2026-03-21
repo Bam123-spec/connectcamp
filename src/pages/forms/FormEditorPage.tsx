@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { FormBuilder } from "@/components/forms/FormBuilder";
 import type { FormAccessType, FormEmailPolicy, FormField } from "@/types/forms";
 import { useAuth } from "@/context/AuthContext";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import {
   fetchFormFields,
   getFormById,
@@ -175,6 +176,24 @@ export default function FormEditorPage() {
         formId: savedForm.id,
         fields,
         originalFieldIds,
+      });
+
+      void logAuditEventSafe({
+        orgId,
+        category: "forms",
+        action: isEditMode ? "form_updated" : "form_created",
+        entityType: "form",
+        entityId: savedForm.id,
+        title: isEditMode ? "Form updated" : "Form created",
+        summary: `${savedForm.title} ${isEditMode ? "was updated" : "was created"} in the forms workspace.`,
+        metadata: {
+          access_type: accessType,
+          email_policy: emailPolicy,
+          is_active: isActive,
+          field_count: fields.length,
+          limit_one_response: limitOneResponse,
+          max_responses: maxResponsesEnabled ? Number(maxResponsesValue) : null,
+        },
       });
 
       toast({
