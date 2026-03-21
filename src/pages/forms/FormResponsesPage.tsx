@@ -84,7 +84,14 @@ export default function FormResponsesPage() {
   const handleExportCsv = () => {
     if (!fields.length || !responses.length) return;
 
-    const headers = ["Response ID", "Submitted At", "User ID", ...fields.map((field) => field.label)];
+    const headers = [
+      "Response ID",
+      "Submitted At",
+      "Full Name",
+      "Email Address",
+      "User ID",
+      ...fields.map((field) => field.label),
+    ];
 
     const rows = responses.map((response) => {
       const answerMap = new Map(response.answers.map((answer) => [answer.field_id, answer.answer]));
@@ -101,6 +108,8 @@ export default function FormResponsesPage() {
       return [
         response.id,
         format(new Date(response.created_at), "yyyy-MM-dd HH:mm:ss"),
+        response.respondent_name || "",
+        response.respondent_email || "",
         response.user_id || "Anonymous",
         ...fieldValues,
       ];
@@ -161,14 +170,15 @@ export default function FormResponsesPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Submitted At</TableHead>
-              <TableHead>User</TableHead>
+              <TableHead>Full Name</TableHead>
+              <TableHead>Email Address</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {responses.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
                   No responses yet.
                 </TableCell>
               </TableRow>
@@ -177,10 +187,13 @@ export default function FormResponsesPage() {
                 <TableRow key={response.id}>
                   <TableCell>{format(new Date(response.created_at), "MMM d, yyyy h:mm a")}</TableCell>
                   <TableCell>
-                    {response.user_id ? (
-                      <span className="font-mono text-xs">{response.user_id.slice(0, 8)}...</span>
-                    ) : (
-                      <span className="text-muted-foreground italic">Anonymous</span>
+                    {response.respondent_name || (
+                      <span className="text-muted-foreground italic">Not provided</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {response.respondent_email || (
+                      <span className="text-muted-foreground italic">Not provided</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right">
@@ -205,6 +218,25 @@ export default function FormResponsesPage() {
             </SheetDescription>
           </SheetHeader>
           <div className="mt-6 space-y-6">
+            <div className="grid gap-4 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Full Name
+                </p>
+                <p className="text-sm font-medium">
+                  {selectedResponse?.respondent_name || "Not provided"}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Email Address
+                </p>
+                <p className="text-sm font-medium">
+                  {selectedResponse?.respondent_email || "Not provided"}
+                </p>
+              </div>
+            </div>
+
             {fields.map((field) => {
               if (field.type === "section") {
                 return (

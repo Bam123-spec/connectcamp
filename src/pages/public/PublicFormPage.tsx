@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import type { Form, FormField } from "@/types/forms";
 import {
+  SCHOOL_EMAIL_DOMAIN,
   fetchFormFields,
   getFormById,
   submitFormResponse,
@@ -24,9 +25,11 @@ import {
 } from "@/lib/formsDataApi";
 import { useAuth } from "@/context/AuthContext";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function PublicFormPage() {
   const { formId } = useParams();
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -38,11 +41,22 @@ export default function PublicFormPage() {
   const [fields, setFields] = useState<FormField[]>([]);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [uploadingFields, setUploadingFields] = useState<Record<string, boolean>>({});
+  const [fullName, setFullName] = useState("");
+  const [emailAddress, setEmailAddress] = useState("");
 
   const uploadingCount = useMemo(
     () => Object.values(uploadingFields).filter(Boolean).length,
     [uploadingFields],
   );
+
+  useEffect(() => {
+    if (profile?.full_name && !fullName) {
+      setFullName(profile.full_name);
+    }
+    if ((profile?.email || session?.user?.email) && !emailAddress) {
+      setEmailAddress(profile?.email ?? session?.user?.email ?? "");
+    }
+  }, [profile?.email, profile?.full_name, session?.user?.email, fullName, emailAddress]);
 
   useEffect(() => {
     if (!formId) {
@@ -121,6 +135,23 @@ export default function PublicFormPage() {
   };
 
   const validateAnswers = () => {
+    if (!fullName.trim()) {
+      return "\"Full Name\" is required.";
+    }
+
+    const normalizedEmail = emailAddress.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return "\"Email Address\" is required.";
+    }
+
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      return "Enter a valid email address.";
+    }
+
+    if (form?.email_policy === "school_only" && !normalizedEmail.endsWith(SCHOOL_EMAIL_DOMAIN)) {
+      return `This form only accepts Montgomery College email addresses (${SCHOOL_EMAIL_DOMAIN}).`;
+    }
+
     for (const field of fields) {
       if (!field.required || field.type === "section") continue;
 
@@ -159,6 +190,8 @@ export default function PublicFormPage() {
         formId,
         answers,
         fields,
+        respondentName: fullName.trim(),
+        respondentEmail: emailAddress.trim().toLowerCase(),
         userId: session?.user?.id ?? null,
       });
 
@@ -232,6 +265,11 @@ export default function PublicFormPage() {
               <div className="pt-3 text-sm text-slate-500">
                 Fields marked with <span className="font-semibold text-red-600">*</span> are required.
               </div>
+              <div className="text-sm text-slate-500">
+                {form?.email_policy === "school_only"
+                  ? `Email restriction: only Montgomery College email addresses (${SCHOOL_EMAIL_DOMAIN}) are accepted.`
+                  : "Email restriction: any valid email address is accepted."}
+              </div>
             </CardHeader>
           </Card>
         </div>
@@ -242,6 +280,53 @@ export default function PublicFormPage() {
               <CardContent className="pt-4 text-sm text-red-700">{submitError}</CardContent>
             </Card>
           )}
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardContent className="space-y-4 pt-6">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-slate-950">Your information</h2>
+                <p className="text-sm text-slate-500">
+                  These details are required with every submission.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="respondent-full-name" className="text-base font-medium text-slate-950">
+                  Full Name <span className="ml-1 text-red-600">*</span>
+                </Label>
+                <Input
+                  id="respondent-full-name"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  placeholder="Enter your full name"
+                  autoComplete="name"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="respondent-email" className="text-base font-medium text-slate-950">
+                  Email Address <span className="ml-1 text-red-600">*</span>
+                </Label>
+                <Input
+                  id="respondent-email"
+                  type="email"
+                  value={emailAddress}
+                  onChange={(event) => setEmailAddress(event.target.value)}
+                  placeholder={
+                    form?.email_policy === "school_only"
+                      ? `name${SCHOOL_EMAIL_DOMAIN}`
+                      : "Enter your email address"
+                  }
+                  autoComplete="email"
+                />
+                <p className="text-xs text-slate-500">
+                  {form?.email_policy === "school_only"
+                    ? `Only ${SCHOOL_EMAIL_DOMAIN} email addresses can submit this form.`
+                    : "Any valid email address is accepted for this form."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
 
           {fields.map((field) => {
             if (field.type === "section") {

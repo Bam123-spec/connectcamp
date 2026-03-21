@@ -11,6 +11,8 @@ export type FormFieldType =
     | "time"
     | "section";
 
+export type FormEmailPolicy = "any" | "school_only";
+
 export interface Form {
     id: string;
     title: string;
@@ -20,6 +22,7 @@ export interface Form {
     updated_at: string;
     is_active: boolean;
     qr_code_url: string | null;
+    email_policy: FormEmailPolicy;
 }
 
 export interface FormField {
@@ -42,6 +45,8 @@ export interface FormResponse {
     form_id: string;
     user_id: string | null;
     created_at: string;
+    respondent_name: string | null;
+    respondent_email: string | null;
 }
 
 export interface FormResponseAnswer {

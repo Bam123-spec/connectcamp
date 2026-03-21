@@ -1,5 +1,11 @@
 import { supabase } from "@/lib/supabaseClient";
-import type { Form, FormField, FormResponseAnswer, FormResponseWithAnswers } from "@/types/forms";
+import type {
+  Form,
+  FormEmailPolicy,
+  FormField,
+  FormResponseAnswer,
+  FormResponseWithAnswers,
+} from "@/types/forms";
 
 type SupabaseErrorLike = {
   code?: string;
@@ -18,6 +24,7 @@ type FormRow = {
   is_active?: boolean | null;
   qr_code_url?: string | null;
   qr_url?: string | null;
+  email_policy?: string | null;
 };
 
 type FormFieldRow = {
@@ -37,6 +44,8 @@ type FormResponseRow = {
   form_id: string;
   user_id?: string | null;
   created_at: string;
+  respondent_name?: string | null;
+  respondent_email?: string | null;
 };
 
 type FormAnswerRow = {
@@ -52,15 +61,21 @@ type LegacySubmissionRow = {
   submitted_at: string;
   submitted_by?: string | null;
   values?: Record<string, { label?: string; value?: unknown } | unknown> | null;
+  respondent_name?: string | null;
+  respondent_email?: string | null;
 };
 
 let orderColumnCache: "order" | "order_index" | null = null;
 let requiredColumnCache: boolean | null = null;
 let qrColumnCache: "qr_code_url" | "qr_url" | null = null;
 let hasOrgIdColumnCache: boolean | null = null;
+const columnPresenceCache = new Map<string, boolean>();
 
 const SCHEMA_ERROR_CODES = new Set(["42703", "42P01", "PGRST204", "PGRST205"]);
 const OPTION_FIELD_TYPES = new Set(["dropdown", "checkboxes", "checkbox", "radio"]);
+const RESPONDENT_NAME_FIELD_ID = "__respondent_name";
+const RESPONDENT_EMAIL_FIELD_ID = "__respondent_email";
+export const SCHOOL_EMAIL_DOMAIN = "@montgomerycollege.com";
 
 function isSchemaError(error: SupabaseErrorLike | null | undefined) {
   if (!error) return false;
@@ -89,6 +104,7 @@ function normalizeForm(row: FormRow): Form {
     updated_at: row.updated_at ?? row.created_at,
     is_active: row.is_active ?? true,
     qr_code_url: row.qr_code_url ?? row.qr_url ?? null,
+    email_policy: row.email_policy === "any" ? "any" : "school_only",
   };
 }
 
@@ -126,18 +142,28 @@ export function resolveFormsOrgId(profileOrgId?: string | null) {
   );
 }
 
-async function detectHasOrgIdColumn() {
-  if (hasOrgIdColumnCache !== null) return hasOrgIdColumnCache;
-  const { error } = await supabase.from("forms").select("id, org_id").limit(1);
+async function detectColumn(table: string, column: string) {
+  const cacheKey = `${table}.${column}`;
+  if (columnPresenceCache.has(cacheKey)) {
+    return columnPresenceCache.get(cacheKey) ?? false;
+  }
+
+  const { error } = await supabase.from(table).select(`id, ${column}`).limit(1);
   if (!error) {
-    hasOrgIdColumnCache = true;
+    columnPresenceCache.set(cacheKey, true);
     return true;
   }
   if (isSchemaError(error)) {
-    hasOrgIdColumnCache = false;
+    columnPresenceCache.set(cacheKey, false);
     return false;
   }
   throw error;
+}
+
+async function detectHasOrgIdColumn() {
+  if (hasOrgIdColumnCache !== null) return hasOrgIdColumnCache;
+  hasOrgIdColumnCache = await detectColumn("forms", "org_id");
+  return hasOrgIdColumnCache;
 }
 
 async function detectQrColumn() {
@@ -190,13 +216,45 @@ async function detectRequiredColumn() {
   throw error;
 }
 
+async function detectFormEmailPolicyColumn() {
+  return detectColumn("forms", "email_policy");
+}
+
+async function detectResponseRespondentNameColumn() {
+  return detectColumn("form_responses", "respondent_name");
+}
+
+async function detectResponseRespondentEmailColumn() {
+  return detectColumn("form_responses", "respondent_email");
+}
+
+async function detectLegacySubmissionRespondentNameColumn() {
+  return detectColumn("form_submissions", "respondent_name");
+}
+
+async function detectLegacySubmissionRespondentEmailColumn() {
+  return detectColumn("form_submissions", "respondent_email");
+}
+
+function buildFormSelectColumns(
+  qrColumn: "qr_code_url" | "qr_url",
+  hasEmailPolicyColumn: boolean,
+) {
+  const columns = ["id", "title", "description", "created_by", "created_at", "is_active", qrColumn];
+  if (hasEmailPolicyColumn) {
+    columns.push("email_policy");
+  }
+  return columns.join(", ");
+}
+
 export async function listForms(orgId?: string | null): Promise<Form[]> {
   const qrColumn = await detectQrColumn();
+  const hasEmailPolicyColumn = await detectFormEmailPolicyColumn();
   const hasOrgColumn = orgId ? await detectHasOrgIdColumn() : false;
 
   let query = supabase
     .from("forms")
-    .select(`id, title, description, created_by, created_at, is_active, ${qrColumn}`)
+    .select(buildFormSelectColumns(qrColumn, hasEmailPolicyColumn))
     .order("created_at", { ascending: false });
 
   if (hasOrgColumn && orgId) {
@@ -206,16 +264,17 @@ export async function listForms(orgId?: string | null): Promise<Form[]> {
   const { data, error } = await query;
   if (error) throw error;
 
-  return (data ?? []).map((row) => normalizeForm(row as FormRow));
+  return (data ?? []).map((row) => normalizeForm(row as unknown as FormRow));
 }
 
 export async function getFormById(formId: string, orgId?: string | null): Promise<Form | null> {
   const qrColumn = await detectQrColumn();
+  const hasEmailPolicyColumn = await detectFormEmailPolicyColumn();
   const hasOrgColumn = orgId ? await detectHasOrgIdColumn() : false;
 
   let query = supabase
     .from("forms")
-    .select(`id, title, description, created_by, created_at, is_active, ${qrColumn}`)
+    .select(buildFormSelectColumns(qrColumn, hasEmailPolicyColumn))
     .eq("id", formId);
 
   if (hasOrgColumn && orgId) {
@@ -226,7 +285,7 @@ export async function getFormById(formId: string, orgId?: string | null): Promis
   if (error) throw error;
   if (!data) return null;
 
-  return normalizeForm(data as FormRow);
+  return normalizeForm(data as unknown as FormRow);
 }
 
 export async function saveForm(params: {
@@ -234,10 +293,12 @@ export async function saveForm(params: {
   title: string;
   description: string;
   isActive: boolean;
+  emailPolicy: FormEmailPolicy;
   createdBy?: string | null;
   orgId?: string | null;
 }) {
   const qrColumn = await detectQrColumn();
+  const hasEmailPolicyColumn = await detectFormEmailPolicyColumn();
   const hasOrgColumn = params.orgId ? await detectHasOrgIdColumn() : false;
 
   const basePayload: Record<string, unknown> = {
@@ -245,6 +306,10 @@ export async function saveForm(params: {
     description: params.description.trim() || null,
     is_active: params.isActive,
   };
+
+  if (hasEmailPolicyColumn) {
+    basePayload.email_policy = params.emailPolicy;
+  }
 
   const payloadWithUpdated = {
     ...basePayload,
@@ -261,7 +326,7 @@ export async function saveForm(params: {
     payload.org_id = params.orgId;
   }
 
-  const selectColumns = `id, title, description, created_by, created_at, is_active, ${qrColumn}`;
+  const selectColumns = buildFormSelectColumns(qrColumn, hasEmailPolicyColumn);
 
   let result;
   if (params.id) {
@@ -444,18 +509,43 @@ function mapLegacySubmissionToAnswers(
   });
 }
 
+function getLegacyRespondentValue(
+  submission: LegacySubmissionRow,
+  fieldId: typeof RESPONDENT_NAME_FIELD_ID | typeof RESPONDENT_EMAIL_FIELD_ID,
+) {
+  const entry = submission.values?.[fieldId];
+  if (!entry) return null;
+  if (typeof entry === "object" && entry !== null && "value" in entry) {
+    const value = (entry as { value?: unknown }).value;
+    return value === undefined || value === null ? null : String(value);
+  }
+  return String(entry);
+}
+
 export async function fetchFormResponses(formId: string, fields: FormField[]): Promise<FormResponseWithAnswers[]> {
+  const hasRespondentNameColumn = await detectResponseRespondentNameColumn();
+  const hasRespondentEmailColumn = await detectResponseRespondentEmailColumn();
+  const responseSelectColumns = ["id", "form_id", "user_id", "created_at"];
+  if (hasRespondentNameColumn) {
+    responseSelectColumns.push("respondent_name");
+  }
+  if (hasRespondentEmailColumn) {
+    responseSelectColumns.push("respondent_email");
+  }
+
   const responsesResult = await supabase
     .from("form_responses")
-    .select("id, form_id, user_id, created_at")
+    .select(responseSelectColumns.join(", "))
     .eq("form_id", formId)
     .order("created_at", { ascending: false });
 
   if (!responsesResult.error) {
-    const responses = (responsesResult.data ?? []) as FormResponseRow[];
+    const responses = (responsesResult.data ?? []) as unknown as FormResponseRow[];
     const responseIds = responses.map((response) => response.id);
 
     let answersByResponseId = new Map<string, FormResponseAnswer[]>();
+    let respondentNameByResponseId = new Map<string, string | null>();
+    let respondentEmailByResponseId = new Map<string, string | null>();
 
     if (responseIds.length > 0) {
       const answersResult = await supabase
@@ -469,6 +559,22 @@ export async function fetchFormResponses(formId: string, fields: FormField[]): P
 
       const grouped = new Map<string, FormResponseAnswer[]>();
       ((answersResult.data ?? []) as FormAnswerRow[]).forEach((answerRow) => {
+        if (answerRow.field_id === RESPONDENT_NAME_FIELD_ID) {
+          respondentNameByResponseId.set(
+            answerRow.response_id,
+            answerRow.answer === null || answerRow.answer === undefined ? null : String(answerRow.answer),
+          );
+          return;
+        }
+
+        if (answerRow.field_id === RESPONDENT_EMAIL_FIELD_ID) {
+          respondentEmailByResponseId.set(
+            answerRow.response_id,
+            answerRow.answer === null || answerRow.answer === undefined ? null : String(answerRow.answer),
+          );
+          return;
+        }
+
         const existing = grouped.get(answerRow.response_id) ?? [];
         existing.push({
           id: answerRow.id,
@@ -487,6 +593,12 @@ export async function fetchFormResponses(formId: string, fields: FormField[]): P
       form_id: response.form_id,
       user_id: response.user_id ?? null,
       created_at: response.created_at,
+      respondent_name: hasRespondentNameColumn
+        ? response.respondent_name ?? null
+        : respondentNameByResponseId.get(response.id) ?? null,
+      respondent_email: hasRespondentEmailColumn
+        ? response.respondent_email ?? null
+        : respondentEmailByResponseId.get(response.id) ?? null,
       answers: answersByResponseId.get(response.id) ?? [],
     }));
   }
@@ -495,19 +607,35 @@ export async function fetchFormResponses(formId: string, fields: FormField[]): P
     throw responsesResult.error;
   }
 
+  const hasLegacyRespondentNameColumn = await detectLegacySubmissionRespondentNameColumn();
+  const hasLegacyRespondentEmailColumn = await detectLegacySubmissionRespondentEmailColumn();
+  const legacySelectColumns = ["id", "form_id", "submitted_at", "submitted_by", "values"];
+  if (hasLegacyRespondentNameColumn) {
+    legacySelectColumns.push("respondent_name");
+  }
+  if (hasLegacyRespondentEmailColumn) {
+    legacySelectColumns.push("respondent_email");
+  }
+
   const legacyResult = await supabase
     .from("form_submissions")
-    .select("id, form_id, submitted_at, submitted_by, values")
+    .select(legacySelectColumns.join(", "))
     .eq("form_id", formId)
     .order("submitted_at", { ascending: false });
 
   if (legacyResult.error) throw legacyResult.error;
 
-  return ((legacyResult.data ?? []) as LegacySubmissionRow[]).map((submission) => ({
+  return ((legacyResult.data ?? []) as unknown as LegacySubmissionRow[]).map((submission) => ({
     id: submission.id,
     form_id: submission.form_id,
     user_id: submission.submitted_by ?? null,
     created_at: submission.submitted_at,
+    respondent_name: hasLegacyRespondentNameColumn
+      ? submission.respondent_name ?? null
+      : getLegacyRespondentValue(submission, RESPONDENT_NAME_FIELD_ID),
+    respondent_email: hasLegacyRespondentEmailColumn
+      ? submission.respondent_email ?? null
+      : getLegacyRespondentValue(submission, RESPONDENT_EMAIL_FIELD_ID),
     answers: mapLegacySubmissionToAnswers(submission, fields),
   }));
 }
@@ -516,11 +644,23 @@ export async function submitFormResponse(params: {
   formId: string;
   answers: Record<string, unknown>;
   fields: FormField[];
+  respondentName: string;
+  respondentEmail: string;
   userId?: string | null;
 }) {
   const responsePayload: Record<string, unknown> = { form_id: params.formId };
   if (params.userId) {
     responsePayload.user_id = params.userId;
+  }
+  const [hasRespondentNameColumn, hasRespondentEmailColumn] = await Promise.all([
+    detectResponseRespondentNameColumn(),
+    detectResponseRespondentEmailColumn(),
+  ]);
+  if (hasRespondentNameColumn) {
+    responsePayload.respondent_name = params.respondentName;
+  }
+  if (hasRespondentEmailColumn) {
+    responsePayload.respondent_email = params.respondentEmail;
   }
 
   const responseInsert = await supabase
@@ -537,6 +677,22 @@ export async function submitFormResponse(params: {
       field_id: fieldId,
       answer: toSerializableAnswer(answer),
     }));
+
+    if (!hasRespondentNameColumn) {
+      answersPayload.push({
+        response_id: responseId,
+        field_id: RESPONDENT_NAME_FIELD_ID,
+        answer: params.respondentName,
+      });
+    }
+
+    if (!hasRespondentEmailColumn) {
+      answersPayload.push({
+        response_id: responseId,
+        field_id: RESPONDENT_EMAIL_FIELD_ID,
+        answer: params.respondentEmail,
+      });
+    }
 
     if (answersPayload.length > 0) {
       const answersInsert = await supabase.from("form_response_answers").insert(answersPayload);
@@ -570,6 +726,27 @@ export async function submitFormResponse(params: {
   };
   if (params.userId) {
     legacyPayload.submitted_by = params.userId;
+  }
+  const [hasLegacyRespondentNameColumn, hasLegacyRespondentEmailColumn] = await Promise.all([
+    detectLegacySubmissionRespondentNameColumn(),
+    detectLegacySubmissionRespondentEmailColumn(),
+  ]);
+  if (hasLegacyRespondentNameColumn) {
+    legacyPayload.respondent_name = params.respondentName;
+  } else {
+    values[RESPONDENT_NAME_FIELD_ID] = {
+      label: "Full Name",
+      value: params.respondentName,
+    };
+  }
+
+  if (hasLegacyRespondentEmailColumn) {
+    legacyPayload.respondent_email = params.respondentEmail;
+  } else {
+    values[RESPONDENT_EMAIL_FIELD_ID] = {
+      label: "Email Address",
+      value: params.respondentEmail,
+    };
   }
 
   const legacyInsert = await supabase.from("form_submissions").insert(legacyPayload);

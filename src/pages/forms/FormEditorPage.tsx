@@ -5,10 +5,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { FormBuilder } from "@/components/forms/FormBuilder";
-import type { FormField } from "@/types/forms";
+import type { FormEmailPolicy, FormField } from "@/types/forms";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchFormFields,
@@ -33,6 +40,7 @@ export default function FormEditorPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [emailPolicy, setEmailPolicy] = useState<FormEmailPolicy>("school_only");
 
   const [fields, setFields] = useState<FormField[]>([]);
   const [originalFieldIds, setOriginalFieldIds] = useState<Set<string>>(new Set());
@@ -67,6 +75,7 @@ export default function FormEditorPage() {
       setTitle(formData.title);
       setDescription(formData.description || "");
       setIsActive(formData.is_active);
+      setEmailPolicy(formData.email_policy);
       setFields(fieldsData);
       setOriginalFieldIds(new Set(fieldsData.map((field) => field.id)));
     } catch (error: any) {
@@ -125,6 +134,7 @@ export default function FormEditorPage() {
         title,
         description,
         isActive,
+        emailPolicy,
         createdBy: session?.user?.id ?? null,
         orgId,
       });
@@ -228,6 +238,27 @@ export default function FormEditorPage() {
                   <p className="text-xs text-muted-foreground">Enable to accept responses</p>
                 </div>
                 <Switch checked={isActive} onCheckedChange={setIsActive} />
+              </div>
+
+              <div className="space-y-2 rounded-lg border p-3 shadow-sm">
+                <div className="space-y-0.5">
+                  <Label>Email Requirement</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Public forms always require Full Name and Email Address. Choose which emails are allowed.
+                  </p>
+                </div>
+                <Select
+                  value={emailPolicy}
+                  onValueChange={(value) => setEmailPolicy(value as FormEmailPolicy)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose email policy" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="school_only">Montgomery College email only</SelectItem>
+                    <SelectItem value="any">Allow any email address</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
