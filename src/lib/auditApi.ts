@@ -97,7 +97,10 @@ export async function fetchAuditSnapshot(orgId: string, limit = 300): Promise<Au
     .select("id, full_name, email, avatar_url, role")
     .in("id", actorIds);
 
-  if (actorsError) throw actorsError;
+  if (actorsError) {
+    console.error("Audit actor enrichment failed", actorsError);
+    return { events, actorsById: {} };
+  }
 
   const actorsById = Object.fromEntries(((actorsData ?? []) as AuditActorProfile[]).map((actor) => [actor.id, actor]));
   return { events, actorsById };
