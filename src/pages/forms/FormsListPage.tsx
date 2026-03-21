@@ -268,7 +268,7 @@ export default function FormsListPage() {
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem onClick={() => handleQrClick(form)}>
                                                     <QrCode className="mr-2 h-4 w-4" />
-                                                    QR Code
+                                                    Share
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
                                                     onClick={() => handleToggleStatus(form)}

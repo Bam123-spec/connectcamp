@@ -102,9 +102,9 @@ export function QrCodeDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>QR Code for {formTitle}</DialogTitle>
+                    <DialogTitle>Share {formTitle}</DialogTitle>
                     <DialogDescription>
-                        Scan this code to access the form, or share the link directly.
+                        Share this form with a link or let people scan the QR code directly.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-col items-center justify-center space-y-4 py-4">
