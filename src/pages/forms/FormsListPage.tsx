@@ -22,6 +22,7 @@ import {
     Trash2,
     QrCode,
     FileText,
+    Copy,
     Loader2,
     CheckCircle2,
     Ban,
@@ -33,6 +34,7 @@ import { format } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
 import {
     deleteForm,
+    duplicateForm,
     listForms,
     resolveFormsOrgId,
     updateFormActiveState,
@@ -124,6 +126,30 @@ export default function FormsListPage() {
         setQrDialogOpen(true);
     };
 
+    const handleDuplicate = async (form: Form) => {
+        try {
+            setBusyFormId(form.id);
+            const duplicated = await duplicateForm(
+                form.id,
+                profile?.id ?? null,
+                resolveFormsOrgId(profile?.org_id),
+            );
+            setForms((prev) => [duplicated, ...prev]);
+            toast({
+                title: "Form duplicated",
+                description: "A draft copy of this form has been created.",
+            });
+        } catch (error: any) {
+            toast({
+                title: "Unable to duplicate form",
+                description: error.message,
+                variant: "destructive",
+            });
+        } finally {
+            setBusyFormId(null);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -145,6 +171,7 @@ export default function FormsListPage() {
                         <TableRow>
                             <TableHead>Title</TableHead>
                             <TableHead>Status</TableHead>
+                            <TableHead>Access</TableHead>
                             <TableHead>Created At</TableHead>
                             <TableHead className="w-[100px]">Actions</TableHead>
                         </TableRow>
@@ -152,7 +179,7 @@ export default function FormsListPage() {
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={4} className="h-24 text-center">
+                                <TableCell colSpan={5} className="h-24 text-center">
                                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                                         <Loader2 className="h-4 w-4 animate-spin" />
                                         Loading forms...
@@ -161,7 +188,7 @@ export default function FormsListPage() {
                             </TableRow>
                         ) : forms.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                                     No forms found. Create one to get started.
                                 </TableCell>
                             </TableRow>
@@ -189,6 +216,26 @@ export default function FormsListPage() {
                                         </span>
                                     </TableCell>
                                     <TableCell>
+                                        <div className="flex flex-col gap-1">
+                                            <span
+                                                className={`inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                                    form.access_type === "internal"
+                                                        ? "bg-amber-100 text-amber-800"
+                                                        : "bg-blue-100 text-blue-800"
+                                                }`}
+                                            >
+                                                {form.access_type === "internal" ? "Signed-in only" : "Public"}
+                                            </span>
+                                            <span className="text-xs text-muted-foreground">
+                                                {form.limit_one_response
+                                                    ? "One response per email"
+                                                    : form.max_responses
+                                                      ? `Cap: ${form.max_responses} responses`
+                                                      : "Unlimited responses"}
+                                            </span>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell>
                                         {format(new Date(form.created_at), "MMM d, yyyy")}
                                     </TableCell>
                                     <TableCell>
@@ -211,6 +258,13 @@ export default function FormsListPage() {
                                                 >
                                                     <FileText className="mr-2 h-4 w-4" />
                                                     View Responses
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onClick={() => handleDuplicate(form)}
+                                                    disabled={busyFormId === form.id}
+                                                >
+                                                    <Copy className="mr-2 h-4 w-4" />
+                                                    Duplicate
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem onClick={() => handleQrClick(form)}>
                                                     <QrCode className="mr-2 h-4 w-4" />

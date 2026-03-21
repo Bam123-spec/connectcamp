@@ -15,7 +15,7 @@ import {
 import { Loader2, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { FormBuilder } from "@/components/forms/FormBuilder";
-import type { FormEmailPolicy, FormField } from "@/types/forms";
+import type { FormAccessType, FormEmailPolicy, FormField } from "@/types/forms";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchFormFields,
@@ -41,6 +41,12 @@ export default function FormEditorPage() {
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [emailPolicy, setEmailPolicy] = useState<FormEmailPolicy>("school_only");
+  const [accessType, setAccessType] = useState<FormAccessType>("public");
+  const [limitOneResponse, setLimitOneResponse] = useState(false);
+  const [maxResponsesEnabled, setMaxResponsesEnabled] = useState(false);
+  const [maxResponsesValue, setMaxResponsesValue] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [redirectUrl, setRedirectUrl] = useState("");
 
   const [fields, setFields] = useState<FormField[]>([]);
   const [originalFieldIds, setOriginalFieldIds] = useState<Set<string>>(new Set());
@@ -76,6 +82,12 @@ export default function FormEditorPage() {
       setDescription(formData.description || "");
       setIsActive(formData.is_active);
       setEmailPolicy(formData.email_policy);
+      setAccessType(formData.access_type);
+      setLimitOneResponse(formData.limit_one_response);
+      setMaxResponsesEnabled(Boolean(formData.max_responses));
+      setMaxResponsesValue(formData.max_responses ? String(formData.max_responses) : "");
+      setSuccessMessage(formData.success_message || "");
+      setRedirectUrl(formData.redirect_url || "");
       setFields(fieldsData);
       setOriginalFieldIds(new Set(fieldsData.map((field) => field.id)));
     } catch (error: any) {
@@ -97,6 +109,21 @@ export default function FormEditorPage() {
 
     if (fields.length === 0) {
       return "Add at least one field before saving.";
+    }
+
+    if (maxResponsesEnabled) {
+      const parsed = Number(maxResponsesValue);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        return "Response limit must be a whole number greater than zero.";
+      }
+    }
+
+    if (redirectUrl.trim()) {
+      try {
+        new URL(redirectUrl.trim());
+      } catch {
+        return "Redirect URL must be a valid absolute URL.";
+      }
     }
 
     for (const field of fields) {
@@ -135,6 +162,11 @@ export default function FormEditorPage() {
         description,
         isActive,
         emailPolicy,
+        accessType,
+        maxResponses: maxResponsesEnabled ? Number(maxResponsesValue) : null,
+        limitOneResponse,
+        successMessage,
+        redirectUrl,
         createdBy: session?.user?.id ?? null,
         orgId,
       });
@@ -242,6 +274,27 @@ export default function FormEditorPage() {
 
               <div className="space-y-2 rounded-lg border p-3 shadow-sm">
                 <div className="space-y-0.5">
+                  <Label>Submission Access</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Public forms can be submitted by anyone with the link. Internal forms require a signed-in Connect Camp user.
+                  </p>
+                </div>
+                <Select
+                  value={accessType}
+                  onValueChange={(value) => setAccessType(value as FormAccessType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose submission access" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public link</SelectItem>
+                    <SelectItem value="internal">Signed-in users only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 rounded-lg border p-3 shadow-sm">
+                <div className="space-y-0.5">
                   <Label>Email Requirement</Label>
                   <p className="text-xs text-muted-foreground">
                     Public forms always require Full Name and Email Address. Choose which emails are allowed.
@@ -259,6 +312,86 @@ export default function FormEditorPage() {
                     <SelectItem value="any">Allow any email address</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-3 rounded-lg border p-3 shadow-sm">
+                <div className="space-y-0.5">
+                  <Label>Submission Rules</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Control how many responses the form can accept.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div className="space-y-0.5">
+                    <Label>One response per email</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Prevent duplicate submissions from the same email address.
+                    </p>
+                  </div>
+                  <Switch checked={limitOneResponse} onCheckedChange={setLimitOneResponse} />
+                </div>
+
+                <div className="space-y-3 rounded-md border p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>Response limit</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Close the form automatically after a fixed number of responses.
+                      </p>
+                    </div>
+                    <Switch checked={maxResponsesEnabled} onCheckedChange={setMaxResponsesEnabled} />
+                  </div>
+
+                  {maxResponsesEnabled && (
+                    <div className="space-y-2">
+                      <Label htmlFor="max-responses">Maximum responses</Label>
+                      <Input
+                        id="max-responses"
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={maxResponsesValue}
+                        onChange={(event) => setMaxResponsesValue(event.target.value)}
+                        placeholder="e.g. 150"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-lg border p-3 shadow-sm">
+                <div className="space-y-0.5">
+                  <Label>Post-Submission Experience</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Customize the thank-you message and optional redirect after submission.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="success-message">Custom success message</Label>
+                  <Textarea
+                    id="success-message"
+                    value={successMessage}
+                    onChange={(event) => setSuccessMessage(event.target.value)}
+                    placeholder="Thanks for submitting. We’ll review your response and follow up soon."
+                    className="min-h-[110px]"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="redirect-url">Redirect URL</Label>
+                  <Input
+                    id="redirect-url"
+                    type="url"
+                    value={redirectUrl}
+                    onChange={(event) => setRedirectUrl(event.target.value)}
+                    placeholder="https://www.connectcamp.online/thank-you"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Leave blank to keep responders on the thank-you page.
+                  </p>
+                </div>
               </div>
             </div>
           </div>

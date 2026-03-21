@@ -12,6 +12,7 @@ export type FormFieldType =
     | "section";
 
 export type FormEmailPolicy = "any" | "school_only";
+export type FormAccessType = "public" | "internal";
 
 export interface Form {
     id: string;
@@ -23,6 +24,11 @@ export interface Form {
     is_active: boolean;
     qr_code_url: string | null;
     email_policy: FormEmailPolicy;
+    access_type: FormAccessType;
+    max_responses: number | null;
+    limit_one_response: boolean;
+    success_message: string | null;
+    redirect_url: string | null;
 }
 
 export interface FormField {

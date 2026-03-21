@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabaseClient";
 import type {
   Form,
+  FormAccessType,
   FormEmailPolicy,
   FormField,
   FormResponseAnswer,
@@ -25,6 +26,11 @@ type FormRow = {
   qr_code_url?: string | null;
   qr_url?: string | null;
   email_policy?: string | null;
+  access_type?: string | null;
+  max_responses?: number | null;
+  limit_one_response?: boolean | null;
+  success_message?: string | null;
+  redirect_url?: string | null;
 };
 
 type FormFieldRow = {
@@ -69,6 +75,11 @@ let orderColumnCache: "order" | "order_index" | null = null;
 let requiredColumnCache: boolean | null = null;
 let qrColumnCache: "qr_code_url" | "qr_url" | null = null;
 let hasOrgIdColumnCache: boolean | null = null;
+let hasFormAccessTypeColumnCache: boolean | null = null;
+let hasFormMaxResponsesColumnCache: boolean | null = null;
+let hasFormLimitOneResponseColumnCache: boolean | null = null;
+let hasFormSuccessMessageColumnCache: boolean | null = null;
+let hasFormRedirectUrlColumnCache: boolean | null = null;
 const columnPresenceCache = new Map<string, boolean>();
 
 const SCHEMA_ERROR_CODES = new Set(["42703", "42P01", "PGRST204", "PGRST205"]);
@@ -76,6 +87,19 @@ const OPTION_FIELD_TYPES = new Set(["dropdown", "checkboxes", "checkbox", "radio
 const RESPONDENT_NAME_FIELD_ID = "__respondent_name";
 const RESPONDENT_EMAIL_FIELD_ID = "__respondent_email";
 export const SCHOOL_EMAIL_DOMAIN = "@montgomerycollege.com";
+
+export type FormSubmissionState = {
+  exists: boolean;
+  is_active: boolean;
+  access_type: FormAccessType;
+  is_accepting: boolean;
+  reason: "open" | "not_found" | "inactive" | "auth_required" | "max_responses_reached" | "already_submitted";
+  max_responses: number | null;
+  responses_count: number;
+  limit_one_response: boolean;
+  success_message: string | null;
+  redirect_url: string | null;
+};
 
 function createUuid() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -117,6 +141,14 @@ function normalizeForm(row: FormRow): Form {
     is_active: row.is_active ?? true,
     qr_code_url: row.qr_code_url ?? row.qr_url ?? null,
     email_policy: row.email_policy === "any" ? "any" : "school_only",
+    access_type: row.access_type === "internal" ? "internal" : "public",
+    max_responses:
+      typeof row.max_responses === "number" && Number.isFinite(row.max_responses)
+        ? row.max_responses
+        : null,
+    limit_one_response: Boolean(row.limit_one_response),
+    success_message: row.success_message?.trim() || null,
+    redirect_url: row.redirect_url?.trim() || null,
   };
 }
 
@@ -232,6 +264,36 @@ async function detectFormEmailPolicyColumn() {
   return detectColumn("forms", "email_policy");
 }
 
+async function detectFormAccessTypeColumn() {
+  if (hasFormAccessTypeColumnCache !== null) return hasFormAccessTypeColumnCache;
+  hasFormAccessTypeColumnCache = await detectColumn("forms", "access_type");
+  return hasFormAccessTypeColumnCache;
+}
+
+async function detectFormMaxResponsesColumn() {
+  if (hasFormMaxResponsesColumnCache !== null) return hasFormMaxResponsesColumnCache;
+  hasFormMaxResponsesColumnCache = await detectColumn("forms", "max_responses");
+  return hasFormMaxResponsesColumnCache;
+}
+
+async function detectFormLimitOneResponseColumn() {
+  if (hasFormLimitOneResponseColumnCache !== null) return hasFormLimitOneResponseColumnCache;
+  hasFormLimitOneResponseColumnCache = await detectColumn("forms", "limit_one_response");
+  return hasFormLimitOneResponseColumnCache;
+}
+
+async function detectFormSuccessMessageColumn() {
+  if (hasFormSuccessMessageColumnCache !== null) return hasFormSuccessMessageColumnCache;
+  hasFormSuccessMessageColumnCache = await detectColumn("forms", "success_message");
+  return hasFormSuccessMessageColumnCache;
+}
+
+async function detectFormRedirectUrlColumn() {
+  if (hasFormRedirectUrlColumnCache !== null) return hasFormRedirectUrlColumnCache;
+  hasFormRedirectUrlColumnCache = await detectColumn("forms", "redirect_url");
+  return hasFormRedirectUrlColumnCache;
+}
+
 async function detectResponseRespondentNameColumn() {
   return detectColumn("form_responses", "respondent_name");
 }
@@ -250,23 +312,68 @@ async function detectLegacySubmissionRespondentEmailColumn() {
 
 function buildFormSelectColumns(
   qrColumn: "qr_code_url" | "qr_url",
-  hasEmailPolicyColumn: boolean,
+  options: {
+    hasEmailPolicyColumn: boolean;
+    hasAccessTypeColumn: boolean;
+    hasMaxResponsesColumn: boolean;
+    hasLimitOneResponseColumn: boolean;
+    hasSuccessMessageColumn: boolean;
+    hasRedirectUrlColumn: boolean;
+  },
 ) {
   const columns = ["id", "title", "description", "created_by", "created_at", "is_active", qrColumn];
-  if (hasEmailPolicyColumn) {
+  if (options.hasEmailPolicyColumn) {
     columns.push("email_policy");
+  }
+  if (options.hasAccessTypeColumn) {
+    columns.push("access_type");
+  }
+  if (options.hasMaxResponsesColumn) {
+    columns.push("max_responses");
+  }
+  if (options.hasLimitOneResponseColumn) {
+    columns.push("limit_one_response");
+  }
+  if (options.hasSuccessMessageColumn) {
+    columns.push("success_message");
+  }
+  if (options.hasRedirectUrlColumn) {
+    columns.push("redirect_url");
   }
   return columns.join(", ");
 }
 
 export async function listForms(orgId?: string | null): Promise<Form[]> {
   const qrColumn = await detectQrColumn();
-  const hasEmailPolicyColumn = await detectFormEmailPolicyColumn();
+  const [
+    hasEmailPolicyColumn,
+    hasAccessTypeColumn,
+    hasMaxResponsesColumn,
+    hasLimitOneResponseColumn,
+    hasSuccessMessageColumn,
+    hasRedirectUrlColumn,
+  ] = await Promise.all([
+    detectFormEmailPolicyColumn(),
+    detectFormAccessTypeColumn(),
+    detectFormMaxResponsesColumn(),
+    detectFormLimitOneResponseColumn(),
+    detectFormSuccessMessageColumn(),
+    detectFormRedirectUrlColumn(),
+  ]);
   const hasOrgColumn = orgId ? await detectHasOrgIdColumn() : false;
 
   let query = supabase
     .from("forms")
-    .select(buildFormSelectColumns(qrColumn, hasEmailPolicyColumn))
+    .select(
+      buildFormSelectColumns(qrColumn, {
+        hasEmailPolicyColumn,
+        hasAccessTypeColumn,
+        hasMaxResponsesColumn,
+        hasLimitOneResponseColumn,
+        hasSuccessMessageColumn,
+        hasRedirectUrlColumn,
+      }),
+    )
     .order("created_at", { ascending: false });
 
   if (hasOrgColumn && orgId) {
@@ -281,12 +388,35 @@ export async function listForms(orgId?: string | null): Promise<Form[]> {
 
 export async function getFormById(formId: string, orgId?: string | null): Promise<Form | null> {
   const qrColumn = await detectQrColumn();
-  const hasEmailPolicyColumn = await detectFormEmailPolicyColumn();
+  const [
+    hasEmailPolicyColumn,
+    hasAccessTypeColumn,
+    hasMaxResponsesColumn,
+    hasLimitOneResponseColumn,
+    hasSuccessMessageColumn,
+    hasRedirectUrlColumn,
+  ] = await Promise.all([
+    detectFormEmailPolicyColumn(),
+    detectFormAccessTypeColumn(),
+    detectFormMaxResponsesColumn(),
+    detectFormLimitOneResponseColumn(),
+    detectFormSuccessMessageColumn(),
+    detectFormRedirectUrlColumn(),
+  ]);
   const hasOrgColumn = orgId ? await detectHasOrgIdColumn() : false;
 
   let query = supabase
     .from("forms")
-    .select(buildFormSelectColumns(qrColumn, hasEmailPolicyColumn))
+    .select(
+      buildFormSelectColumns(qrColumn, {
+        hasEmailPolicyColumn,
+        hasAccessTypeColumn,
+        hasMaxResponsesColumn,
+        hasLimitOneResponseColumn,
+        hasSuccessMessageColumn,
+        hasRedirectUrlColumn,
+      }),
+    )
     .eq("id", formId);
 
   if (hasOrgColumn && orgId) {
@@ -306,11 +436,30 @@ export async function saveForm(params: {
   description: string;
   isActive: boolean;
   emailPolicy: FormEmailPolicy;
+  accessType: FormAccessType;
+  maxResponses?: number | null;
+  limitOneResponse: boolean;
+  successMessage?: string | null;
+  redirectUrl?: string | null;
   createdBy?: string | null;
   orgId?: string | null;
 }) {
   const qrColumn = await detectQrColumn();
-  const hasEmailPolicyColumn = await detectFormEmailPolicyColumn();
+  const [
+    hasEmailPolicyColumn,
+    hasAccessTypeColumn,
+    hasMaxResponsesColumn,
+    hasLimitOneResponseColumn,
+    hasSuccessMessageColumn,
+    hasRedirectUrlColumn,
+  ] = await Promise.all([
+    detectFormEmailPolicyColumn(),
+    detectFormAccessTypeColumn(),
+    detectFormMaxResponsesColumn(),
+    detectFormLimitOneResponseColumn(),
+    detectFormSuccessMessageColumn(),
+    detectFormRedirectUrlColumn(),
+  ]);
   const hasOrgColumn = params.orgId ? await detectHasOrgIdColumn() : false;
 
   const basePayload: Record<string, unknown> = {
@@ -321,6 +470,24 @@ export async function saveForm(params: {
 
   if (hasEmailPolicyColumn) {
     basePayload.email_policy = params.emailPolicy;
+  }
+  if (hasAccessTypeColumn) {
+    basePayload.access_type = params.accessType;
+  }
+  if (hasMaxResponsesColumn) {
+    basePayload.max_responses =
+      typeof params.maxResponses === "number" && Number.isFinite(params.maxResponses)
+        ? params.maxResponses
+        : null;
+  }
+  if (hasLimitOneResponseColumn) {
+    basePayload.limit_one_response = params.limitOneResponse;
+  }
+  if (hasSuccessMessageColumn) {
+    basePayload.success_message = params.successMessage?.trim() || null;
+  }
+  if (hasRedirectUrlColumn) {
+    basePayload.redirect_url = params.redirectUrl?.trim() || null;
   }
 
   const payloadWithUpdated = {
@@ -338,7 +505,14 @@ export async function saveForm(params: {
     payload.org_id = params.orgId;
   }
 
-  const selectColumns = buildFormSelectColumns(qrColumn, hasEmailPolicyColumn);
+  const selectColumns = buildFormSelectColumns(qrColumn, {
+    hasEmailPolicyColumn,
+    hasAccessTypeColumn,
+    hasMaxResponsesColumn,
+    hasLimitOneResponseColumn,
+    hasSuccessMessageColumn,
+    hasRedirectUrlColumn,
+  });
 
   let result;
   if (params.id) {
@@ -452,6 +626,44 @@ export async function updateFormActiveState(formId: string, isActive: boolean) {
   if (result.error) throw result.error;
 }
 
+export async function duplicateForm(formId: string, createdBy?: string | null, orgId?: string | null) {
+  const [sourceForm, sourceFields] = await Promise.all([
+    getFormById(formId, orgId),
+    fetchFormFields(formId),
+  ]);
+
+  if (!sourceForm) {
+    throw new Error("The source form could not be loaded.");
+  }
+
+  const duplicatedForm = await saveForm({
+    title: `${sourceForm.title} (Copy)`,
+    description: sourceForm.description ?? "",
+    isActive: false,
+    emailPolicy: sourceForm.email_policy,
+    accessType: sourceForm.access_type,
+    maxResponses: sourceForm.max_responses,
+    limitOneResponse: sourceForm.limit_one_response,
+    successMessage: sourceForm.success_message,
+    redirectUrl: sourceForm.redirect_url,
+    createdBy: createdBy ?? sourceForm.created_by,
+    orgId,
+  });
+
+  await syncFormFields({
+    formId: duplicatedForm.id,
+    fields: sourceFields.map((field, index) => ({
+      ...field,
+      id: createUuid(),
+      form_id: duplicatedForm.id,
+      order: index,
+    })),
+    originalFieldIds: new Set(),
+  });
+
+  return duplicatedForm;
+}
+
 export async function saveQrCodeUrl(formId: string, qrUrl: string) {
   const qrColumn = await detectQrColumn();
   const payload = qrColumn === "qr_code_url" ? { qr_code_url: qrUrl } : { qr_url: qrUrl };
@@ -532,6 +744,58 @@ function getLegacyRespondentValue(
     return value === undefined || value === null ? null : String(value);
   }
   return String(entry);
+}
+
+function normalizeSubmissionState(value: unknown): FormSubmissionState | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  return {
+    exists: Boolean(record.form_exists ?? record.exists),
+    is_active: Boolean(record.is_active),
+    access_type: record.access_type === "internal" ? "internal" : "public",
+    is_accepting: Boolean(record.is_accepting),
+    reason:
+      record.reason === "inactive" ||
+      record.reason === "auth_required" ||
+      record.reason === "max_responses_reached" ||
+      record.reason === "already_submitted" ||
+      record.reason === "not_found"
+        ? record.reason
+        : "open",
+    max_responses:
+      typeof record.max_responses === "number" && Number.isFinite(record.max_responses)
+        ? record.max_responses
+        : null,
+    responses_count:
+      typeof record.responses_count === "number" && Number.isFinite(record.responses_count)
+        ? record.responses_count
+        : 0,
+    limit_one_response: Boolean(record.limit_one_response),
+    success_message: typeof record.success_message === "string" ? record.success_message : null,
+    redirect_url: typeof record.redirect_url === "string" ? record.redirect_url : null,
+  };
+}
+
+export async function getFormSubmissionState(
+  formId: string,
+  respondentEmail?: string | null,
+): Promise<FormSubmissionState | null> {
+  const rpcResult = await supabase.rpc("get_form_submission_state", {
+    target_form_id: formId,
+    target_respondent_email: respondentEmail?.trim().toLowerCase() || null,
+  });
+
+  if (!rpcResult.error) {
+    const row = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+    return normalizeSubmissionState(row);
+  }
+
+  if (!isSchemaError(rpcResult.error)) {
+    throw rpcResult.error;
+  }
+
+  return null;
 }
 
 export async function fetchFormResponses(formId: string, fields: FormField[]): Promise<FormResponseWithAnswers[]> {
@@ -660,6 +924,23 @@ export async function submitFormResponse(params: {
   respondentEmail: string;
   userId?: string | null;
 }) {
+  const submissionState = await getFormSubmissionState(params.formId, params.respondentEmail);
+  if (submissionState && !submissionState.is_accepting) {
+    if (submissionState.reason === "inactive") {
+      throw new Error("This form is currently closed and no longer accepting responses.");
+    }
+    if (submissionState.reason === "auth_required") {
+      throw new Error("This form is restricted to signed-in Connect Camp users.");
+    }
+    if (submissionState.reason === "max_responses_reached") {
+      throw new Error("This form has reached its response limit.");
+    }
+    if (submissionState.reason === "already_submitted") {
+      throw new Error("A response has already been submitted with this email address.");
+    }
+    throw new Error("This form is not accepting responses right now.");
+  }
+
   const responseId = createUuid();
 
   const responsePayload: Record<string, unknown> = {
@@ -714,6 +995,12 @@ export async function submitFormResponse(params: {
   }
 
   if (!isSchemaError(responseInsert.error)) {
+    if (
+      responseInsert.error.code === "42501" ||
+      /row-level security/i.test(`${responseInsert.error.message ?? ""} ${responseInsert.error.details ?? ""}`)
+    ) {
+      throw new Error("This form could not accept your response with the current access rules.");
+    }
     throw responseInsert.error;
   }
 
@@ -761,5 +1048,13 @@ export async function submitFormResponse(params: {
   }
 
   const legacyInsert = await supabase.from("form_submissions").insert(legacyPayload);
-  if (legacyInsert.error) throw legacyInsert.error;
+  if (legacyInsert.error) {
+    if (
+      legacyInsert.error.code === "42501" ||
+      /row-level security/i.test(`${legacyInsert.error.message ?? ""} ${legacyInsert.error.details ?? ""}`)
+    ) {
+      throw new Error("This form could not accept your response with the current access rules.");
+    }
+    throw legacyInsert.error;
+  }
 }

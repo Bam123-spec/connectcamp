@@ -14,11 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, ArrowRight, LockKeyhole, Ban } from "lucide-react";
 import type { Form, FormField } from "@/types/forms";
 import {
   SCHOOL_EMAIL_DOMAIN,
   fetchFormFields,
+  getFormSubmissionState,
   getFormById,
   submitFormResponse,
   uploadFormFile,
@@ -36,6 +37,7 @@ export default function PublicFormPage() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
 
   const [form, setForm] = useState<Form | null>(null);
   const [fields, setFields] = useState<FormField[]>([]);
@@ -48,6 +50,7 @@ export default function PublicFormPage() {
     () => Object.values(uploadingFields).filter(Boolean).length,
     [uploadingFields],
   );
+  const normalizedEmail = useMemo(() => emailAddress.trim().toLowerCase(), [emailAddress]);
 
   useEffect(() => {
     if (profile?.full_name && !fullName) {
@@ -81,11 +84,6 @@ export default function PublicFormPage() {
         return;
       }
 
-      if (!loadedForm.is_active) {
-        setError("This form is currently not accepting responses.");
-        return;
-      }
-
       setForm(loadedForm);
 
       const loadedFields = await fetchFormFields(id);
@@ -96,6 +94,34 @@ export default function PublicFormPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!formId || !form) return;
+
+    let cancelled = false;
+    const checkAvailability = async () => {
+      try {
+        const state = await getFormSubmissionState(formId, normalizedEmail || null);
+        if (!cancelled && state) {
+          if (state.reason === "already_submitted") {
+            setAvailabilityError("A response has already been submitted with this email address.");
+          } else {
+            setAvailabilityError(null);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setAvailabilityError(null);
+        }
+      }
+    };
+
+    void checkAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form, formId, normalizedEmail]);
 
   const handleInputChange = (fieldId: string, value: unknown) => {
     setAnswers((prev) => ({ ...prev, [fieldId]: value }));
@@ -139,7 +165,6 @@ export default function PublicFormPage() {
       return "\"Full Name\" is required.";
     }
 
-    const normalizedEmail = emailAddress.trim().toLowerCase();
     if (!normalizedEmail) {
       return "\"Email Address\" is required.";
     }
@@ -185,13 +210,14 @@ export default function PublicFormPage() {
     try {
       setSubmitting(true);
       setSubmitError(null);
+      setAvailabilityError(null);
 
       await submitFormResponse({
         formId,
         answers,
         fields,
         respondentName: fullName.trim(),
-        respondentEmail: emailAddress.trim().toLowerCase(),
+        respondentEmail: normalizedEmail,
         userId: session?.user?.id ?? null,
       });
 
@@ -202,6 +228,37 @@ export default function PublicFormPage() {
       setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (!submitted || !form?.redirect_url) return;
+
+    const redirectTimer = window.setTimeout(() => {
+      window.location.assign(form.redirect_url as string);
+    }, 2500);
+
+    return () => {
+      window.clearTimeout(redirectTimer);
+    };
+  }, [submitted, form?.redirect_url]);
+
+  const closedState = useMemo(() => {
+    if (!form) return null;
+    if (!form.is_active) {
+      return {
+        title: "Form Closed",
+        description: "This form is no longer accepting responses.",
+        icon: Ban,
+      };
+    }
+    if (form.access_type === "internal" && !session?.user) {
+      return {
+        title: "Sign-In Required",
+        description: "This form is limited to signed-in Connect Camp users. Open it from an authenticated Connect Camp session to continue.",
+        icon: LockKeyhole,
+      };
+    }
+    return null;
+  }, [form, session?.user]);
 
   if (loading) {
     return (
@@ -239,7 +296,53 @@ export default function PublicFormPage() {
               <CheckCircle2 className="h-6 w-6 text-green-600" />
             </div>
             <CardTitle>Thank You!</CardTitle>
-            <CardDescription>Your response has been recorded successfully.</CardDescription>
+            <CardDescription>
+              {form?.success_message?.trim() || "Your response has been recorded successfully."}
+            </CardDescription>
+            {form?.redirect_url && (
+              <div className="pt-4">
+                <Button asChild className="bg-slate-950 hover:bg-slate-800">
+                  <a href={form.redirect_url} target="_self" rel="noreferrer">
+                    Continue
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </a>
+                </Button>
+                <p className="mt-3 text-xs text-slate-500">
+                  Redirecting automatically in a moment.
+                </p>
+              </div>
+            )}
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  if (closedState) {
+    const ClosedIcon = closedState.icon;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] p-4">
+        <Card className="w-full max-w-xl border-slate-200 text-center shadow-sm">
+          <div className="h-3 bg-slate-950" />
+          <CardHeader className="space-y-4">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+              <ClosedIcon className="h-7 w-7 text-slate-700" />
+            </div>
+            <div className="space-y-2">
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                Connect Camp Form
+              </span>
+              <CardTitle className="text-2xl text-slate-950">{closedState.title}</CardTitle>
+              <CardDescription className="mx-auto max-w-md text-base leading-7 text-slate-600">
+                {closedState.description}
+              </CardDescription>
+            </div>
+            {form && (
+              <div className="rounded-lg border border-slate-200 bg-white p-4 text-left">
+                <p className="text-sm font-semibold text-slate-950">{form.title}</p>
+                {form.description && <p className="mt-2 text-sm text-slate-500">{form.description}</p>}
+              </div>
+            )}
           </CardHeader>
         </Card>
       </div>
@@ -278,6 +381,12 @@ export default function PublicFormPage() {
           {submitError && (
             <Card className="border-red-200 bg-red-50 shadow-sm">
               <CardContent className="pt-4 text-sm text-red-700">{submitError}</CardContent>
+            </Card>
+          )}
+
+          {availabilityError && !submitError && (
+            <Card className="border-amber-200 bg-amber-50 shadow-sm">
+              <CardContent className="pt-4 text-sm text-amber-800">{availabilityError}</CardContent>
             </Card>
           )}
 
@@ -460,6 +569,9 @@ export default function PublicFormPage() {
                             Uploading file...
                           </div>
                         )}
+                        <p className="text-xs text-slate-500">
+                          Uploads may take a moment. Keep this page open until the file finishes processing.
+                        </p>
                         {typeof answers[field.id] === "string" && (
                           <a
                             href={answers[field.id] as string}
@@ -482,7 +594,7 @@ export default function PublicFormPage() {
             <Button
               size="lg"
               type="submit"
-              disabled={submitting || uploadingCount > 0}
+              disabled={submitting || uploadingCount > 0 || availabilityError !== null}
               className="min-w-[180px] bg-slate-950 hover:bg-slate-800"
             >
               {(submitting || uploadingCount > 0) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
