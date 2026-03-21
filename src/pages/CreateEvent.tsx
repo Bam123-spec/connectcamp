@@ -1,57 +1,84 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { CalendarClock, ChevronLeft, Loader2 } from "lucide-react";
+import { format } from "date-fns";
 import { supabase } from "@/lib/supabaseClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/context/AuthContext";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TimePicker } from "@/components/ui/time-picker";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
 
-const statusOptions = [
-  {
-    value: "pending",
-    label: "Upcoming",
-    badgeClass: "bg-purple-100 text-purple-700 border-transparent",
-  },
-  {
-    value: "approved",
-    label: "Approved",
-    badgeClass: "bg-green-600 text-white border-transparent",
-  },
-];
+type ClubOption = {
+  id: string;
+  name: string;
+};
 
 function CreateEvent() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? null;
+
+  const [clubs, setClubs] = useState<ClubOption[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [time, setTime] = useState("");
   const [location, setLocation] = useState("");
   const [coverImage, setCoverImage] = useState("");
-  const [status, setStatus] = useState("pending");
+  const [clubId, setClubId] = useState("workspace");
+  const [status, setStatus] = useState<"approved" | "pending">("pending");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!orgId) return;
+
+    let active = true;
+    const loadClubs = async () => {
+      const { data, error: clubsError } = await supabase
+        .from("clubs")
+        .select("id, name")
+        .eq("org_id", orgId)
+        .order("name", { ascending: true });
+
+      if (!active || clubsError) return;
+      setClubs((data ?? []) as ClubOption[]);
+    };
+
+    loadClubs();
+    return () => {
+      active = false;
+    };
+  }, [orgId]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+
+    if (!name.trim()) {
+      setError("Event name is required.");
+      return;
+    }
+
     setSaving(true);
 
     const { error: supabaseError } = await supabase.from("events").insert({
-      name,
-      description,
+      name: name.trim(),
+      description: description.trim() || null,
       date: date ? format(date, "yyyy-MM-dd") : null,
-      time,
-      location,
-      cover_image_url: coverImage,
+      time: time.trim() || null,
+      location: location.trim() || null,
+      cover_image_url: coverImage || null,
+      club_id: clubId === "workspace" ? null : clubId,
       approved: status === "approved" ? true : null,
+      created_at: new Date().toISOString(),
     });
 
     setSaving(false);
@@ -66,25 +93,36 @@ function CreateEvent() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" className="rounded-full" onClick={() => navigate(-1)}>
-        ← Back to events
+      <Button variant="ghost" className="rounded-full" onClick={() => navigate("/events")}>
+        <ChevronLeft className="h-4 w-4" />
+        Back to events
       </Button>
-      <Card className="max-w-3xl">
-        <CardHeader>
-          <CardTitle>Create event</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Add a new program to the Connect Camp calendar.
+
+      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_42%,#eff6ff_100%)] shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+        <div className="px-6 py-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Create Event</p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Set up the event clearly the first time.</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+            Give Student Life and club officers the basics they need: owner, approval state, timing, location, and a clean event description.
           </p>
+        </div>
+      </section>
+
+      <Card className="max-w-4xl rounded-[28px] border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-2xl tracking-tight">Event details</CardTitle>
+          <CardDescription>Everything here feeds the event operations workspace and the student-facing event experience.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="border-t border-slate-200 pt-6">
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Event name</label>
+              <label className="text-sm font-medium">Event name *</label>
               <Input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Glow & Grow Workshop"
                 required
+                className="h-11 rounded-2xl border-slate-200"
               />
             </div>
 
@@ -93,10 +131,38 @@ function CreateEvent() {
               <Textarea
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="Describe the purpose, key activities, and audience for this event."
-                required
-                rows={4}
+                placeholder="Describe the purpose, audience, and what students should expect."
+                rows={5}
               />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Owning club</label>
+                <Select value={clubId} onValueChange={setClubId}>
+                  <SelectTrigger className="h-11 rounded-2xl border-slate-200 bg-white">
+                    <SelectValue placeholder="Choose a club owner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="workspace">Student Life / unassigned</SelectItem>
+                    {clubs.map((club) => (
+                      <SelectItem key={club.id} value={club.id}>{club.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Approval state</label>
+                <Select value={status} onValueChange={(value) => setStatus(value as "approved" | "pending")}>
+                  <SelectTrigger className="h-11 rounded-2xl border-slate-200 bg-white">
+                    <SelectValue placeholder="Choose approval state" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending review</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -105,23 +171,15 @@ function CreateEvent() {
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
-                      variant={"outline"}
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !date && "text-muted-foreground"
-                      )}
+                      variant="outline"
+                      className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      <CalendarClock className="mr-2 h-4 w-4" />
                       {date ? format(date, "PPP") : <span>Pick a date</span>}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={date}
-                      onSelect={setDate}
-                      initialFocus
-                    />
+                    <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
                   </PopoverContent>
                 </Popover>
               </div>
@@ -137,33 +195,13 @@ function CreateEvent() {
                 value={location}
                 onChange={(event) => setLocation(event.target.value)}
                 placeholder="Community Commons, Room 204"
+                className="h-11 rounded-2xl border-slate-200"
               />
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Cover image</label>
-              <ImageUpload
-                value={coverImage}
-                onChange={setCoverImage}
-                bucket="events"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Label</label>
-              <div className="flex gap-3">
-                {statusOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setStatus(option.value)}
-                    className={`rounded-full border px-3 py-1 text-sm shadow-sm transition ${status === option.value ? "border-foreground" : "border-muted"
-                      }`}
-                  >
-                    <Badge className={option.badgeClass}>{option.label}</Badge>
-                  </button>
-                ))}
-              </div>
+              <ImageUpload value={coverImage} onChange={setCoverImage} bucket="events" />
             </div>
 
             {error && (
@@ -172,8 +210,10 @@ function CreateEvent() {
               </div>
             )}
 
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => navigate("/events")}>Cancel</Button>
               <Button type="submit" disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {saving ? "Saving..." : "Create event"}
               </Button>
             </div>
