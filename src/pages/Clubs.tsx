@@ -1,19 +1,33 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/lib/supabaseClient";
-import { useRealtimeMembers } from "@/hooks/useRealtimeMembers";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Building2,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardList,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Plus,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from "lucide-react";
+import { format, isValid, parse } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageUpload } from "@/components/ImageUpload";
 import { TimePicker } from "@/components/ui/time-picker";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
-import { format, parse, isValid } from "date-fns";
-import { CalendarIcon } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -23,8 +37,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
+import { cn } from "@/lib/utils";
 
-type Club = {
+type ClubRow = {
   id: string;
   name: string;
   description: string | null;
@@ -34,6 +51,53 @@ type Club = {
   cover_image_url: string | null;
   member_count: number | null;
   approved: boolean | null;
+  email: string | null;
+  org_id: string | null;
+  primary_user_id: string | null;
+  created_at: string | null;
+};
+
+type OfficerRow = {
+  id: string;
+  club_id: string | null;
+  role: string | null;
+  email: string | null;
+};
+
+type TaskRow = {
+  id: string;
+  club_id: string | null;
+  status: string | null;
+  due_date: string | null;
+};
+
+type ConversationRow = {
+  id: string;
+  club_id: string | null;
+  last_message_at: string | null;
+};
+
+type ConversationMemberRow = {
+  conversation_id: string;
+  role: string | null;
+};
+
+type EventRow = {
+  id: string;
+  club_id: string | null;
+  date: string | null;
+};
+
+type ClubInsight = ClubRow & {
+  memberCount: number;
+  officerCount: number;
+  openTaskCount: number;
+  overdueTaskCount: number;
+  upcomingEventCount: number;
+  messagingReady: boolean;
+  lastMessageAt: string | null;
+  attentionReasons: string[];
+  health: "strong" | "watch" | "urgent";
 };
 
 type CreateClubForm = {
@@ -41,41 +105,237 @@ type CreateClubForm = {
   description: string;
   time: string;
   location: string;
+  email: string;
+  approved: boolean;
 };
+
+type FilterKey = "all" | "attention" | "prospects" | "officers" | "messaging" | "tasks";
 
 const initialCreateClubState: CreateClubForm = {
   name: "",
   description: "",
   time: "",
   location: "",
+  email: "",
+  approved: true,
 };
 
+const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
+  { key: "all", label: "All clubs" },
+  { key: "attention", label: "Needs attention" },
+  { key: "officers", label: "No officers" },
+  { key: "messaging", label: "Chat setup needed" },
+  { key: "tasks", label: "Open tasks" },
+  { key: "prospects", label: "Prospects" },
+];
+
+function parseStoredDate(day: string | null) {
+  if (!day) return undefined;
+  const parsed = parse(day, "yyyy-MM-dd", new Date());
+  return isValid(parsed) ? parsed : undefined;
+}
+
+function formatMeeting(day: string | null, time: string | null) {
+  if (!day && !time) return "Meeting schedule not set";
+  if (!day) return time ?? "Meeting schedule not set";
+  if (!time) return day;
+  return `${day} • ${time}`;
+}
+
+function getAttentionReasons(club: {
+  approved: boolean | null;
+  memberCount: number;
+  officerCount: number;
+  messagingReady: boolean;
+  openTaskCount: number;
+  overdueTaskCount: number;
+}) {
+  const reasons: string[] = [];
+  if (!club.approved) reasons.push("Prospect awaiting approval");
+  if (club.officerCount === 0) reasons.push("No officer coverage");
+  if (!club.messagingReady) reasons.push("Chat access not connected");
+  if (club.memberCount === 0) reasons.push("No recorded members");
+  if (club.overdueTaskCount > 0) reasons.push(`${club.overdueTaskCount} overdue task${club.overdueTaskCount === 1 ? "" : "s"}`);
+  else if (club.openTaskCount > 0) reasons.push(`${club.openTaskCount} open task${club.openTaskCount === 1 ? "" : "s"}`);
+  return reasons;
+}
+
+function getHealth(reasons: string[]) {
+  if (reasons.some((reason) => reason.includes("approval") || reason.includes("No officer") || reason.includes("overdue"))) {
+    return "urgent" as const;
+  }
+  if (reasons.length > 0) return "watch" as const;
+  return "strong" as const;
+}
+
+function summarizeClubInsights(params: {
+  clubs: ClubRow[];
+  officers: OfficerRow[];
+  tasks: TaskRow[];
+  conversations: ConversationRow[];
+  conversationMembers: ConversationMemberRow[];
+  events: EventRow[];
+}) {
+  const officerMap = new Map<string, OfficerRow[]>();
+  params.officers.forEach((officer) => {
+    if (!officer.club_id) return;
+    officerMap.set(officer.club_id, [...(officerMap.get(officer.club_id) ?? []), officer]);
+  });
+
+  const taskMap = new Map<string, TaskRow[]>();
+  params.tasks.forEach((task) => {
+    if (!task.club_id) return;
+    taskMap.set(task.club_id, [...(taskMap.get(task.club_id) ?? []), task]);
+  });
+
+  const eventMap = new Map<string, EventRow[]>();
+  params.events.forEach((event) => {
+    if (!event.club_id) return;
+    eventMap.set(event.club_id, [...(eventMap.get(event.club_id) ?? []), event]);
+  });
+
+  const conversationByClub = new Map<string, ConversationRow>();
+  params.conversations.forEach((conversation) => {
+    if (conversation.club_id) conversationByClub.set(conversation.club_id, conversation);
+  });
+
+  const clubRoleConversationIds = new Set(
+    params.conversationMembers.filter((member) => member.role === "club").map((member) => member.conversation_id),
+  );
+
+  return params.clubs
+    .map((club) => {
+      const officers = officerMap.get(club.id) ?? [];
+      const tasks = taskMap.get(club.id) ?? [];
+      const upcomingEvents = eventMap.get(club.id) ?? [];
+      const conversation = conversationByClub.get(club.id);
+      const memberCount = typeof club.member_count === "number" ? club.member_count : 0;
+      const openTaskCount = tasks.filter((task) => task.status !== "completed").length;
+      const overdueTaskCount = tasks.filter((task) => {
+        if (!task.due_date || task.status === "completed") return false;
+        return new Date(task.due_date).getTime() < Date.now();
+      }).length;
+      const messagingReady = conversation ? clubRoleConversationIds.has(conversation.id) : false;
+      const attentionReasons = getAttentionReasons({
+        approved: club.approved,
+        memberCount,
+        officerCount: officers.length,
+        messagingReady,
+        openTaskCount,
+        overdueTaskCount,
+      });
+
+      return {
+        ...club,
+        memberCount,
+        officerCount: officers.length,
+        openTaskCount,
+        overdueTaskCount,
+        upcomingEventCount: upcomingEvents.length,
+        messagingReady,
+        lastMessageAt: conversation?.last_message_at ?? null,
+        attentionReasons,
+        health: getHealth(attentionReasons),
+      } satisfies ClubInsight;
+    })
+    .sort((a, b) => {
+      const healthRank = { urgent: 0, watch: 1, strong: 2 };
+      const healthDiff = healthRank[a.health] - healthRank[b.health];
+      if (healthDiff !== 0) return healthDiff;
+      return a.name.localeCompare(b.name);
+    });
+}
+
 function Clubs() {
-  const [clubs, setClubs] = useState<Club[]>([]);
+  const { toast } = useToast();
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? null;
+
+  const [clubs, setClubs] = useState<ClubInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateClubForm>(initialCreateClubState);
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [editingClub, setEditingClub] = useState<Club | null>(null);
+  const [editingClub, setEditingClub] = useState<ClubInsight | null>(null);
 
   const fetchClubs = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase.from("clubs").select("*").order("name");
-
-    if (error) {
-      setError(error.message);
-    } else {
-      setClubs(data ?? []);
-      setError(null);
+    if (!orgId) {
+      setError("This admin account is missing an organization context.");
+      setLoading(false);
+      return;
     }
 
+    setLoading(true);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const { data: clubRows, error: clubError } = await supabase
+      .from("clubs")
+      .select("id, name, description, location, day, time, cover_image_url, member_count, approved, email, org_id, primary_user_id, created_at")
+      .eq("org_id", orgId)
+      .order("name", { ascending: true });
+
+    if (clubError) {
+      setError(clubError.message);
+      setLoading(false);
+      return;
+    }
+
+    const typedClubs = (clubRows ?? []) as ClubRow[];
+    if (typedClubs.length === 0) {
+      setClubs([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    const clubIds = typedClubs.map((club) => club.id);
+
+    const [officersResult, tasksResult, conversationsResult, eventsResult] = await Promise.all([
+      supabase.from("officers").select("id, club_id, role, email").in("club_id", clubIds),
+      supabase.from("club_tasks").select("id, club_id, status, due_date").in("club_id", clubIds),
+      supabase.from("admin_conversations").select("id, club_id, last_message_at").eq("org_id", orgId).eq("type", "club").in("club_id", clubIds),
+      supabase.from("events").select("id, club_id, date").in("club_id", clubIds).gte("date", today),
+    ]);
+
+    if (officersResult.error || tasksResult.error || conversationsResult.error || eventsResult.error) {
+      const firstError = officersResult.error ?? tasksResult.error ?? conversationsResult.error ?? eventsResult.error;
+      setError(firstError?.message ?? "Could not load club operations data.");
+      setLoading(false);
+      return;
+    }
+
+    const conversations = (conversationsResult.data ?? []) as ConversationRow[];
+    const conversationIds = conversations.map((conversation) => conversation.id);
+    const membersResult = conversationIds.length > 0
+      ? await supabase.from("admin_conversation_members").select("conversation_id, role").in("conversation_id", conversationIds)
+      : { data: [], error: null };
+
+    if (membersResult.error) {
+      setError(membersResult.error.message);
+      setLoading(false);
+      return;
+    }
+
+    const nextClubs = summarizeClubInsights({
+      clubs: typedClubs,
+      officers: (officersResult.data ?? []) as OfficerRow[],
+      tasks: (tasksResult.data ?? []) as TaskRow[],
+      conversations,
+      conversationMembers: (membersResult.data ?? []) as ConversationMemberRow[],
+      events: (eventsResult.data ?? []) as EventRow[],
+    });
+
+    setClubs(nextClubs);
+    setError(null);
     setLoading(false);
-  }, []);
+  }, [orgId]);
 
   useEffect(() => {
     fetchClubs();
@@ -89,39 +349,30 @@ function Clubs() {
     setEditingClub(null);
   };
 
-  const handleEditClub = (club: Club) => {
+  const handleEditClub = (club: ClubInsight) => {
     setEditingClub(club);
     setCreateForm({
       name: club.name,
       description: club.description || "",
       time: club.time || "",
       location: club.location || "",
+      email: club.email || "",
+      approved: club.approved ?? true,
     });
-
-    if (club.day) {
-      // Assuming day is stored as YYYY-MM-DD
-      try {
-        const parsedDate = parse(club.day, "yyyy-MM-dd", new Date());
-        if (isValid(parsedDate)) {
-          setDate(parsedDate);
-        } else {
-          setDate(undefined);
-        }
-      } catch (e) {
-        console.error("Failed to parse date", e);
-        setDate(undefined);
-      }
-    } else {
-      setDate(undefined);
-    }
-
+    setDate(parseStoredDate(club.day));
     setLogoUrl(club.cover_image_url || "");
+    setCreateError(null);
     setSheetOpen(true);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setCreateError(null);
+
+    if (!orgId) {
+      setCreateError("This account is missing an organization context.");
+      return;
+    }
 
     if (!createForm.name.trim()) {
       setCreateError("Club name is required.");
@@ -137,30 +388,32 @@ function Clubs() {
         time: createForm.time.trim() || null,
         location: createForm.location.trim() || null,
         cover_image_url: logoUrl || null,
+        email: createForm.email.trim() || null,
+        approved: createForm.approved,
       };
 
-      let error;
-
+      let submitError: { message?: string } | null = null;
       if (editingClub) {
         const { error: updateError } = await supabase
           .from("clubs")
-          .update({ ...payload })
-          .eq("id", editingClub.id);
-        error = updateError;
+          .update(payload)
+          .eq("id", editingClub.id)
+          .eq("org_id", orgId);
+        submitError = updateError;
       } else {
         const { error: insertError } = await supabase
           .from("clubs")
-          .insert([{ ...payload, created_at: new Date().toISOString() }]);
-        error = insertError;
+          .insert([{ ...payload, org_id: orgId, created_at: new Date().toISOString() }]);
+        submitError = insertError;
       }
 
-      if (error) {
-        throw new Error(error.message ?? `Unable to ${editingClub ? "update" : "create"} club.`);
+      if (submitError) {
+        throw new Error(submitError.message ?? `Unable to ${editingClub ? "update" : "create"} club.`);
       }
 
       toast({
         title: `Club ${editingClub ? "updated" : "created"}`,
-        description: `${payload.name} has been ${editingClub ? "updated" : "added"}.`,
+        description: `${payload.name} has been ${editingClub ? "updated" : "added"} to the workspace.`,
       });
       resetForm();
       setSheetOpen(false);
@@ -177,12 +430,53 @@ function Clubs() {
     }
   };
 
+  const summary = useMemo(() => {
+    const total = clubs.length;
+    const approved = clubs.filter((club) => club.approved).length;
+    const prospects = clubs.filter((club) => !club.approved).length;
+    const messagingReady = clubs.filter((club) => club.messagingReady).length;
+    const withOfficers = clubs.filter((club) => club.officerCount > 0).length;
+    const openTasks = clubs.reduce((sum, club) => sum + club.openTaskCount, 0);
+    const needsAttention = clubs.filter((club) => club.health !== "strong").length;
+    return { total, approved, prospects, messagingReady, withOfficers, openTasks, needsAttention };
+  }, [clubs]);
+
+  const filteredClubs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return clubs.filter((club) => {
+      const matchesSearch = !query || [club.name, club.description ?? "", club.location ?? "", club.email ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+      if (!matchesSearch) return false;
+
+      switch (activeFilter) {
+        case "attention":
+          return club.health !== "strong";
+        case "prospects":
+          return !club.approved;
+        case "officers":
+          return club.officerCount === 0;
+        case "messaging":
+          return !club.messagingReady;
+        case "tasks":
+          return club.openTaskCount > 0;
+        default:
+          return true;
+      }
+    });
+  }, [activeFilter, clubs, searchQuery]);
+
+  const attentionClubs = useMemo(() => clubs.filter((club) => club.health !== "strong").slice(0, 6), [clubs]);
+  const prospectClubs = useMemo(() => clubs.filter((club) => !club.approved).slice(0, 5), [clubs]);
+  const messagingGaps = useMemo(() => clubs.filter((club) => !club.messagingReady).slice(0, 6), [clubs]);
+
   const content = () => {
     if (loading) {
       return (
-        <div className="grid gap-4 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-48 rounded-xl" />
+        <div className="grid gap-4 xl:grid-cols-2">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-72 rounded-[24px]" />
           ))}
         </div>
       );
@@ -190,16 +484,26 @@ function Clubs() {
 
     if (error) {
       return (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="rounded-[24px] border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700">
           Unable to load clubs: {error}
         </div>
       );
     }
 
+    if (filteredClubs.length === 0) {
+      return (
+        <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50/70 px-6 py-12 text-center">
+          <Building2 className="mx-auto h-10 w-10 text-slate-400" />
+          <p className="mt-4 text-lg font-semibold text-slate-900">No clubs match this view.</p>
+          <p className="mt-2 text-sm text-slate-500">Try a different filter or search term, or add a new club to the workspace.</p>
+        </div>
+      );
+    }
+
     return (
-      <div className="grid gap-4 md:grid-cols-2">
-        {clubs.map((club) => (
-          <ClubCard key={club.id} club={club} onEdit={() => handleEditClub(club)} />
+      <div className="grid gap-4 xl:grid-cols-2">
+        {filteredClubs.map((club) => (
+          <ClubOperationalCard key={club.id} club={club} onEdit={() => handleEditClub(club)} />
         ))}
       </div>
     );
@@ -207,30 +511,36 @@ function Clubs() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <CardTitle>Club roster</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Live data pulled directly from the Connect Camp Supabase project.
+      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_42%,#eff6ff_100%)] shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+        <div className="flex flex-col gap-6 px-6 py-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Club Operations</p>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Run clubs like an operational portfolio, not a static roster.</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              This view now shows which clubs are actually staffed, messaging-ready, and operationally covered. It should tell Student Life where to intervene, not just what exists.
             </p>
           </div>
-          <Sheet open={sheetOpen} onOpenChange={(open) => {
-            setSheetOpen(open);
-            if (!open) {
-              resetForm();
-            }
-          }}>
+
+          <Sheet
+            open={sheetOpen}
+            onOpenChange={(open) => {
+              setSheetOpen(open);
+              if (!open) resetForm();
+            }}
+          >
             <SheetTrigger asChild>
-              <Button className="rounded-full">Add New Club</Button>
+              <Button className="rounded-full px-5">
+                <Plus className="h-4 w-4" />
+                Add club
+              </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
               <SheetHeader>
-                <SheetTitle>{editingClub ? "Edit club" : "Create a new club"}</SheetTitle>
+                <SheetTitle>{editingClub ? "Edit club" : "Create a club"}</SheetTitle>
                 <p className="text-sm text-muted-foreground">
                   {editingClub
-                    ? "Update the details for this organization."
-                    : "Fill out the form to publish a new organization to the roster."}
+                    ? "Update the details, coverage state, and contact information for this club."
+                    : "Add a new club or prospect into the workspace with proper org-scoped metadata."}
                 </p>
               </SheetHeader>
               <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
@@ -238,21 +548,26 @@ function Clubs() {
                   <label className="text-sm font-medium text-foreground">Club name *</label>
                   <Input
                     value={createForm.name}
-                    onChange={(event) =>
-                      setCreateForm((prev) => ({ ...prev, name: event.target.value }))
-                    }
+                    onChange={(event) => setCreateForm((prev) => ({ ...prev, name: event.target.value }))}
                     placeholder="Outdoor Adventure Society"
                     required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Club email</label>
+                  <Input
+                    type="email"
+                    value={createForm.email}
+                    onChange={(event) => setCreateForm((prev) => ({ ...prev, email: event.target.value }))}
+                    placeholder="club@montgomerycollege.edu"
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Description</label>
                   <Textarea
                     value={createForm.description}
-                    onChange={(event) =>
-                      setCreateForm((prev) => ({ ...prev, description: event.target.value }))
-                    }
-                    placeholder="Share a short summary"
+                    onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))}
+                    placeholder="What is the club for, and why should Student Life care about it?"
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -261,142 +576,342 @@ function Clubs() {
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !date && "text-muted-foreground"
-                          )}
+                          variant="outline"
+                          className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
                         >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          <CalendarClock className="mr-2 h-4 w-4" />
                           {date ? format(date, "PPP") : <span>Pick a date</span>}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={date}
-                          onSelect={setDate}
-                          initialFocus
-                        />
+                        <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
                       </PopoverContent>
                     </Popover>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">Meeting time</label>
-                    <TimePicker
-                      value={createForm.time}
-                      onChange={(value) =>
-                        setCreateForm((prev) => ({ ...prev, time: value }))
-                      }
-                    />
+                    <TimePicker value={createForm.time} onChange={(value) => setCreateForm((prev) => ({ ...prev, time: value }))} />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Room / Location</label>
+                  <label className="text-sm font-medium text-foreground">Room / location</label>
                   <Input
                     value={createForm.location}
-                    onChange={(event) =>
-                      setCreateForm((prev) => ({ ...prev, location: event.target.value }))
-                    }
+                    onChange={(event) => setCreateForm((prev) => ({ ...prev, location: event.target.value }))}
                     placeholder="Student Center, Room 203"
                   />
                 </div>
+                <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">Approved / official club</p>
+                      <p className="mt-1 text-sm text-slate-500">Turn this off to keep the club in the prospects pipeline until Student Life approves it.</p>
+                    </div>
+                    <Switch checked={createForm.approved} onCheckedChange={(checked) => setCreateForm((prev) => ({ ...prev, approved: checked }))} />
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Upload club logo</label>
-                  <ImageUpload
-                    value={logoUrl}
-                    onChange={setLogoUrl}
-                    bucket="club-logos"
-                  />
+                  <label className="text-sm font-medium text-foreground">Cover image</label>
+                  <ImageUpload value={logoUrl} onChange={setLogoUrl} bucket="club-logos" />
                 </div>
                 {createError && <p className="text-sm text-destructive">{createError}</p>}
                 <SheetFooter className="gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setSheetOpen(false);
-                      resetForm();
-                    }}
-                  >
+                  <Button type="button" variant="outline" onClick={() => { setSheetOpen(false); resetForm(); }}>
                     Cancel
                   </Button>
                   <Button type="submit" disabled={submitting}>
-                    {submitting ? "Saving..." : (editingClub ? "Save Changes" : "Create Club")}
+                    {submitting ? "Saving..." : editingClub ? "Save changes" : "Create club"}
                   </Button>
                 </SheetFooter>
               </form>
             </SheetContent>
           </Sheet>
-        </CardHeader>
-        <CardContent>{content()}</CardContent>
-      </Card>
+        </div>
+
+        <div className="grid gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-6">
+          <KpiCard label="Total clubs" value={summary.total} helper="Active organizations in this workspace" icon={Building2} loading={loading} />
+          <KpiCard label="Approved" value={summary.approved} helper={`${summary.prospects} still in prospect status`} icon={CheckCircle2} loading={loading} />
+          <KpiCard label="Officer-covered" value={summary.withOfficers} helper={`${Math.max(summary.total - summary.withOfficers, 0)} clubs still unstaffed`} icon={ShieldCheck} loading={loading} />
+          <KpiCard label="Messaging-ready" value={summary.messagingReady} helper={`${Math.max(summary.total - summary.messagingReady, 0)} need club-side access`} icon={MessageSquare} loading={loading} />
+          <KpiCard label="Open tasks" value={summary.openTasks} helper="Tasks linked to club execution" icon={ClipboardList} loading={loading} />
+          <KpiCard label="Needs attention" value={summary.needsAttention} helper="Coverage, approval, or activity gaps" icon={AlertTriangle} loading={loading} />
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_360px]">
+        <div className="space-y-6">
+          <Card className="rounded-[28px] border-slate-200 shadow-sm">
+            <CardHeader className="gap-4 border-b border-slate-200 pb-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <CardTitle className="text-2xl tracking-tight">Club portfolio</CardTitle>
+                  <CardDescription className="mt-1">Search, filter, and intervene where club operations are thin.</CardDescription>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                    <Link to="/clubs/manage">
+                      Open workspace
+                      <ArrowUpRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                    <Link to="/officers">Officers</Link>
+                  </Button>
+                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                    <Link to="/tasks">Tasks</Link>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search clubs, locations, descriptions, or club emails"
+                    className="h-11 rounded-2xl border-slate-200 pl-10"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {FILTER_OPTIONS.map((option) => (
+                    <Button
+                      key={option.key}
+                      type="button"
+                      variant={activeFilter === option.key ? "default" : "outline"}
+                      className={cn(
+                        "rounded-full",
+                        activeFilter !== option.key && "border-slate-200 bg-white text-slate-700",
+                      )}
+                      onClick={() => setActiveFilter(option.key)}
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">{content()}</CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <SideListCard
+            title="Coverage watchlist"
+            description="Clubs that currently need Student Life intervention first."
+            emptyLabel="No clubs are currently flagged."
+            items={attentionClubs.map((club) => ({
+              id: club.id,
+              label: club.name,
+              helper: club.attentionReasons[0] ?? "Operationally healthy",
+              tone: club.health,
+            }))}
+          />
+
+          <SideListCard
+            title="Messaging gaps"
+            description="Clubs without a club-side participant in the dedicated admin chat."
+            emptyLabel="Every club already has club-side messaging access."
+            items={messagingGaps.map((club) => ({
+              id: club.id,
+              label: club.name,
+              helper: club.officerCount > 0 ? "Officer exists, but chat access is not connected" : "No officer account to attach yet",
+              tone: club.officerCount > 0 ? "watch" : "urgent",
+            }))}
+            actionHref="/messaging"
+            actionLabel="Open Messaging"
+          />
+
+          <SideListCard
+            title="Prospects queue"
+            description="Clubs still pending approval or formal onboarding."
+            emptyLabel="No prospect clubs are waiting right now."
+            items={prospectClubs.map((club) => ({
+              id: club.id,
+              label: club.name,
+              helper: club.email || "No club contact email on file",
+              tone: "watch",
+            }))}
+          />
+        </div>
+      </div>
     </div>
   );
 }
 
-export default Clubs;
-
-const ClubCard = ({ club, onEdit }: { club: Club; onEdit: () => void }) => {
-  const memberCount = useRealtimeMembers(club.id);
-  const logoUrl = club.cover_image_url;
-  const meetingDay = club.day ?? "TBD";
-  const meetingTime = club.time ?? "TBD";
-  const clubLocation = club.location ?? "TBD";
-
+function KpiCard({
+  label,
+  value,
+  helper,
+  icon: Icon,
+  loading,
+}: {
+  label: string;
+  value: number;
+  helper: string;
+  icon: typeof Building2;
+  loading: boolean;
+}) {
   return (
-    <article className="overflow-hidden rounded-xl border bg-background/80 shadow-sm">
-      {logoUrl ? (
-        <img src={logoUrl} alt={club.name} className="h-32 w-full object-cover" />
-      ) : (
-        <div className="h-32 w-full bg-muted" />
-      )}
-      <div className="space-y-3 px-4 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-lg font-semibold">{club.name}</p>
-            <p className="text-sm text-muted-foreground">{club.description}</p>
+    <div className="bg-white px-5 py-4">
+      <div className="flex items-center justify-between gap-3 text-slate-500">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
+        <Icon className="h-4 w-4" />
+      </div>
+      {loading ? <Skeleton className="mt-3 h-8 w-16" /> : <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>}
+      <p className="mt-2 text-sm text-slate-500">{helper}</p>
+    </div>
+  );
+}
+
+function SideListCard({
+  title,
+  description,
+  items,
+  emptyLabel,
+  actionHref,
+  actionLabel,
+}: {
+  title: string;
+  description: string;
+  items: Array<{ id: string; label: string; helper: string; tone: ClubInsight["health"] | "watch" }>;
+  emptyLabel: string;
+  actionHref?: string;
+  actionLabel?: string;
+}) {
+  return (
+    <Card className="rounded-[28px] border-slate-200 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-xl tracking-tight">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {items.length === 0 ? (
+          <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">
+            {emptyLabel}
           </div>
-          <div className="flex items-center gap-2">
-            {!club.approved && (
-              <Badge variant="destructive" className="shrink-0">
-                Pending
-              </Badge>
+        ) : (
+          items.map((item) => (
+            <div key={item.id} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">{item.label}</p>
+                  <p className="mt-1 text-sm text-slate-500">{item.helper}</p>
+                </div>
+                <StatusBadge tone={item.tone} />
+              </div>
+            </div>
+          ))
+        )}
+        {actionHref && actionLabel && (
+          <Button asChild variant="outline" className="w-full rounded-full border-slate-200 bg-white">
+            <Link to={actionHref}>{actionLabel}</Link>
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClubOperationalCard({ club, onEdit }: { club: ClubInsight; onEdit: () => void }) {
+  return (
+    <article className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+      <div className="grid gap-0 md:grid-cols-[180px_minmax(0,1fr)]">
+        {club.cover_image_url ? (
+          <img src={club.cover_image_url} alt={club.name} className="h-full min-h-[180px] w-full object-cover" />
+        ) : (
+          <div className="flex min-h-[180px] items-center justify-center bg-[linear-gradient(135deg,#eff6ff_0%,#f8fafc_50%,#eef2ff_100%)] text-slate-500">
+            <div className="text-center">
+              <Sparkles className="mx-auto h-8 w-8" />
+              <p className="mt-3 text-sm font-medium">No cover image</p>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-5 px-5 py-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-xl font-semibold tracking-tight text-slate-950">{club.name}</h3>
+                <Badge className={cn("rounded-full border-0", club.approved ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800")}>
+                  {club.approved ? "Official" : "Prospect"}
+                </Badge>
+                <StatusBadge tone={club.health} />
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{club.description || "No club description has been added yet."}</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 xl:justify-end">
+              <Button variant="outline" size="sm" className="rounded-full border-slate-200" onClick={onEdit}>Edit</Button>
+              <Button asChild variant="outline" size="sm" className="rounded-full border-slate-200 bg-white">
+                <Link to={`/clubs/manage?id=${club.id}`}>Manage</Link>
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricPill icon={Users} label="Members" value={String(club.memberCount)} />
+            <MetricPill icon={ShieldCheck} label="Officers" value={String(club.officerCount)} />
+            <MetricPill icon={MessageSquare} label="Messaging" value={club.messagingReady ? "Ready" : "Setup needed"} />
+            <MetricPill icon={ClipboardList} label="Open tasks" value={String(club.openTaskCount)} />
+          </div>
+
+          <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <CalendarClock className="h-4 w-4 text-slate-400" />
+              <span>{formatMeeting(club.day, club.time)}</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <MapPin className="h-4 w-4 text-slate-400" />
+              <span>{club.location || "Location not set"}</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <Mail className="h-4 w-4 text-slate-400" />
+              <span>{club.email || "No club email on file"}</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <Sparkles className="h-4 w-4 text-slate-400" />
+              <span>{club.upcomingEventCount} upcoming event{club.upcomingEventCount === 1 ? "" : "s"}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {club.attentionReasons.length > 0 ? (
+              club.attentionReasons.map((reason) => (
+                <Badge key={reason} variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-slate-700">
+                  {reason}
+                </Badge>
+              ))
+            ) : (
+              <Badge className="rounded-full border-0 bg-emerald-50 text-emerald-700">Operationally healthy</Badge>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-full border-border/60 text-foreground hover:bg-muted/50"
-              onClick={onEdit}
-            >
-              Edit
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-full border-transparent bg-violet-100 text-violet-600 hover:bg-violet-200"
-              onClick={() => window.location.href = `/clubs/manage?id=${club.id}`}
-            >
-              Manage
-            </Button>
           </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="text-muted-foreground">Members</p>
-            <p className="text-lg font-semibold">{memberCount}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Meeting time</p>
-            <p className="font-medium">
-              {meetingDay} • {meetingTime}
-            </p>
-          </div>
-        </div>
-
-        <div className="text-sm text-muted-foreground">Location: {clubLocation}</div>
       </div>
     </article>
   );
-};
+}
+
+function MetricPill({ icon: Icon, label, value }: { icon: typeof Building2; label: string; value: string }) {
+  return (
+    <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3">
+      <div className="flex items-center justify-between gap-2 text-slate-500">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="mt-2 text-lg font-semibold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function StatusBadge({ tone }: { tone: ClubInsight["health"] | "watch" }) {
+  if (tone === "strong") {
+    return <Badge className="rounded-full border-0 bg-emerald-100 text-emerald-700">Healthy</Badge>;
+  }
+  if (tone === "urgent") {
+    return <Badge className="rounded-full border-0 bg-red-100 text-red-700">Action needed</Badge>;
+  }
+  return <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Watch</Badge>;
+}
+
+export default Clubs;
