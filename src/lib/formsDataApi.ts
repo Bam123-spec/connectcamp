@@ -77,6 +77,18 @@ const RESPONDENT_NAME_FIELD_ID = "__respondent_name";
 const RESPONDENT_EMAIL_FIELD_ID = "__respondent_email";
 export const SCHOOL_EMAIL_DOMAIN = "@montgomerycollege.com";
 
+function createUuid() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 function isSchemaError(error: SupabaseErrorLike | null | undefined) {
   if (!error) return false;
   if (error.code && SCHEMA_ERROR_CODES.has(error.code)) return true;
@@ -648,7 +660,12 @@ export async function submitFormResponse(params: {
   respondentEmail: string;
   userId?: string | null;
 }) {
-  const responsePayload: Record<string, unknown> = { form_id: params.formId };
+  const responseId = createUuid();
+
+  const responsePayload: Record<string, unknown> = {
+    id: responseId,
+    form_id: params.formId,
+  };
   if (params.userId) {
     responsePayload.user_id = params.userId;
   }
@@ -663,15 +680,9 @@ export async function submitFormResponse(params: {
     responsePayload.respondent_email = params.respondentEmail;
   }
 
-  const responseInsert = await supabase
-    .from("form_responses")
-    .insert(responsePayload)
-    .select("id")
-    .single();
+  const responseInsert = await supabase.from("form_responses").insert(responsePayload);
 
   if (!responseInsert.error) {
-    const responseId = responseInsert.data.id as string;
-
     const answersPayload = Object.entries(params.answers).map(([fieldId, answer]) => ({
       response_id: responseId,
       field_id: fieldId,
