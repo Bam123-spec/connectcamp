@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
+import { callAdminMemberManagementApi } from "@/lib/adminMemberManagementApi";
 import UserTable, { type DisplayUser } from "@/components/user-management/UserTable";
 import UserDetailPanel from "@/components/user-management/UserDetailPanel";
 
@@ -198,9 +199,19 @@ function UserManagement() {
       role,
       club_id: null,
     };
-    const { error } = await supabase.from("officers").upsert(payload, { onConflict: "user_id" });
-    if (error) {
-      toast({ title: "Unable to promote", description: error.message, variant: "destructive" });
+    try {
+      await callAdminMemberManagementApi({
+        action: "upsert-officer",
+        userId: selectedUser.id,
+        role,
+        clubId: null,
+      });
+    } catch (error) {
+      toast({
+        title: "Unable to promote",
+        description: error instanceof Error ? error.message : "Unable to update officer role.",
+        variant: "destructive",
+      });
       return;
     }
     setOfficers((prev) => {
@@ -217,9 +228,17 @@ function UserManagement() {
     if (!selectedUser) return;
     const target = officerRecord;
     if (!target) return;
-    const { error } = await supabase.from("officers").delete().eq("user_id", selectedUser.id);
-    if (error) {
-      toast({ title: "Unable to revoke", description: error.message, variant: "destructive" });
+    try {
+      await callAdminMemberManagementApi({
+        action: "remove-officer",
+        userId: selectedUser.id,
+      });
+    } catch (error) {
+      toast({
+        title: "Unable to revoke",
+        description: error instanceof Error ? error.message : "Unable to remove officer role.",
+        variant: "destructive",
+      });
       return;
     }
     setOfficers((prev) => prev.filter((officer) => officer.id !== target.id));

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { logAuditEventSafe } from "@/lib/auditApi";
+import { callAdminMemberManagementApi } from "@/lib/adminMemberManagementApi";
 
 type ClubOption = {
   id: string;
@@ -21,14 +22,6 @@ type BulkRow = {
   club: string;
   role: string;
   line: number;
-};
-
-const generateTempPassword = () => {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return Math.random().toString(36).slice(-12);
 };
 
 function AddMembers() {
@@ -80,96 +73,14 @@ function AddMembers() {
     };
   }, []);
 
-  const ensureAuthUser = useCallback(async (email: string) => {
-    const normalized = email.trim().toLowerCase();
-    const { data, error } = await supabase.auth.admin.createUser({
-      email: normalized,
-      email_confirm: true,
-      password: generateTempPassword(),
-    });
-
-    if (error) {
-      if (error.message?.toLowerCase().includes("already registered")) {
-        return null;
-      }
-
-      throw new Error(error.message ?? "Unable to create user in Supabase Auth");
-    }
-
-    return data.user?.id ?? null;
-  }, []);
-
-  const addMemberRecord = useCallback(async (clubId: string, userId: string | null) => {
-    const { error } = await supabase
-      .from("club_members")
-      .upsert(
-        [
-          {
-            club_id: clubId,
-            user_id: userId,
-          },
-        ],
-        { onConflict: "club_id,user_id", ignoreDuplicates: true },
-      );
-
-    if (error) {
-      throw new Error(error.message ?? "Unable to add member to club");
-    }
-  }, []);
-
-  const findProfileByEmail = useCallback(async (email: string) => {
-    const { data, error } = await supabase.from("profiles").select("id").eq("email", email).single();
-    if (error || !data) {
-      throw new Error("User with this email doesn’t exist.");
-    }
-    return data.id as string;
-  }, []);
-
   const addMemberFlow = useCallback(
     async (email: string, clubId: string) => {
       const normalized = email.trim().toLowerCase();
-      await ensureAuthUser(normalized);
-      let userId: string | null = null;
-      try {
-        userId = await findProfileByEmail(normalized);
-      } catch {
-        userId = null;
-      }
-      await addMemberRecord(clubId, userId);
-    },
-    [addMemberRecord, ensureAuthUser, findProfileByEmail],
-  );
-
-  const insertOfficer = useCallback(
-    async (userId: string, clubId: string, email: string, role: OfficerRole) => {
-      // Enforce a single officer record per user per club; block if one already exists for this club.
-      const { data: existingRows } = await supabase
-        .from("officers")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("club_id", clubId)
-        .limit(1);
-
-      if (existingRows && existingRows.length > 0) {
-        throw new Error("Can't add user: this account is already an officer for this club.");
-      }
-
-      // No existing record; insert new.
-      const payloadWithEmail = { user_id: userId, club_id: clubId, role, email };
-      const payloadWithoutEmail = { user_id: userId, club_id: clubId, role };
-
-      const withEmail = await supabase.from("officers").insert(payloadWithEmail);
-      if (!withEmail.error) return;
-
-      const message = withEmail.error.message?.toLowerCase() ?? "";
-      const columnMissing = message.includes("column") && message.includes("email");
-      if (columnMissing) {
-        const withoutEmail = await supabase.from("officers").insert(payloadWithoutEmail);
-        if (withoutEmail.error) throw new Error(withoutEmail.error.message ?? "Unable to add officer.");
-        return;
-      }
-
-      throw new Error(withEmail.error.message ?? "Unable to add officer.");
+      await callAdminMemberManagementApi({
+        action: "add-member",
+        email: normalized,
+        clubId,
+      });
     },
     [],
   );
@@ -177,11 +88,14 @@ function AddMembers() {
   const addOfficerFlow = useCallback(
     async (email: string, clubId: string, role: OfficerRole) => {
       const normalized = email.trim().toLowerCase();
-      const profileId = await findProfileByEmail(normalized);
-      await insertOfficer(profileId, clubId, normalized, role);
-      await addMemberRecord(clubId, profileId);
+      await callAdminMemberManagementApi({
+        action: "add-officer",
+        email: normalized,
+        clubId,
+        role,
+      });
     },
-    [addMemberRecord, findProfileByEmail, insertOfficer],
+    [],
   );
 
   const handleAddMember = async (event: FormEvent<HTMLFormElement>) => {
