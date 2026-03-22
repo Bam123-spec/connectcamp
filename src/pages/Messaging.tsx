@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { Link } from "react-router-dom";
 import {
@@ -8,12 +8,15 @@ import {
   Loader2,
   Mail,
   MessageSquare,
+  PanelRightOpen,
   Plus,
   RefreshCw,
   Search,
   Send,
   Shield,
+  Trash2,
   UserPlus,
+  Users,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -28,23 +31,27 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useMessaging } from "@/hooks/useMessaging";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import {
   addConversationAccess,
+  type ConversationAccessMember,
   type ConversationAccessState,
   type ConversationCategory,
-  findMessagingUserByEmail,
-  type MessagingProfile,
-  type MessagingDirectoryUser,
-  type RecipientOption,
-  type RecipientTab,
   fetchConversationAccessState,
   fetchRecipientOptions,
+  findMessagingUserByEmail,
+  type MessagingDirectoryUser,
+  type MessagingProfile,
+  removeConversationAccess,
+  type RecipientOption,
+  type RecipientTab,
   searchMessagingUsers,
   syncClubMessagingPaths,
 } from "@/lib/messagingApi";
@@ -109,9 +116,9 @@ const RECIPIENT_EMPTY_COPY: Record<RecipientTab, string> = {
 };
 
 const COMPOSER_HINT: Record<ConversationCategory, string> = {
-  clubs: "Club chats are best for operational follow-up, reminders, and direct support.",
+  clubs: "Use club chats for follow-up, reminders, and direct support.",
   admins: "Use admin chats for cross-campus coordination and internal handoff.",
-  prospects: "Prospect chats should focus on onboarding, next steps, and approval guidance.",
+  prospects: "Use prospect chats for onboarding, requirements, and next steps.",
 };
 
 const COMPOSER_PLACEHOLDER: Record<ConversationCategory, string> = {
@@ -120,10 +127,57 @@ const COMPOSER_PLACEHOLDER: Record<ConversationCategory, string> = {
   prospects: "Message this prospect club...",
 };
 
+const ADMIN_ROLES = new Set(["admin", "student_life_admin", "super_admin"]);
+
+const EMPTY_ACCESS_STATE: ConversationAccessState = {
+  directMembers: [],
+  suggestedMembers: [],
+  latestMessageAt: null,
+  latestMessagePreview: "",
+  readSummary: {
+    totalMembers: 0,
+    adminMembers: 0,
+    clubMembers: 0,
+    seenLatestCount: 0,
+  },
+};
+
 const isNearBottom = (element: HTMLElement) => {
   const threshold = 120;
   return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
 };
+
+function formatReadState(member: ConversationAccessMember) {
+  switch (member.readState) {
+    case "seen_latest":
+      return {
+        label: "Seen latest",
+        tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    case "read_earlier":
+      return {
+        label: member.lastReadAt
+          ? `Read ${formatDistanceToNowStrict(new Date(member.lastReadAt), { addSuffix: true })}`
+          : "Read earlier",
+        tone: "border-slate-200 bg-slate-100 text-slate-600",
+      };
+    case "unread":
+      return {
+        label: "Unread",
+        tone: "border-amber-200 bg-amber-50 text-amber-700",
+      };
+    case "not_added":
+      return {
+        label: "Not added",
+        tone: "border-sky-200 bg-sky-50 text-sky-700",
+      };
+    default:
+      return {
+        label: "No messages yet",
+        tone: "border-slate-200 bg-slate-100 text-slate-600",
+      };
+  }
+}
 
 function Messaging() {
   const { session, profile } = useAuth();
@@ -163,16 +217,16 @@ function Messaging() {
   const [selectedRecipientKey, setSelectedRecipientKey] = useState<string | null>(null);
   const [syncingClubPaths, setSyncingClubPaths] = useState(false);
   const [accessDialogOpen, setAccessDialogOpen] = useState(false);
-  const [accessState, setAccessState] = useState<ConversationAccessState>({
-    directMembers: [],
-    clubLinkedMembers: [],
-  });
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [accessState, setAccessState] = useState<ConversationAccessState>(EMPTY_ACCESS_STATE);
   const [accessLoading, setAccessLoading] = useState(false);
   const [directorySearch, setDirectorySearch] = useState("");
   const [directoryUsers, setDirectoryUsers] = useState<MessagingDirectoryUser[]>([]);
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [emailAccess, setEmailAccess] = useState("");
   const [addingAccess, setAddingAccess] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [bulkAddingSuggested, setBulkAddingSuggested] = useState(false);
 
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -216,9 +270,128 @@ function Messaging() {
     () =>
       new Set([
         ...accessState.directMembers.map((member) => member.id),
-        ...accessState.clubLinkedMembers.map((member) => member.id),
+        ...accessState.suggestedMembers.map((member) => member.id),
       ]),
-    [accessState.clubLinkedMembers, accessState.directMembers],
+    [accessState.directMembers, accessState.suggestedMembers],
+  );
+
+  const participantMap = useMemo(
+    () =>
+      new Map(
+        accessState.directMembers.map((member) => [
+          member.id,
+          member.fullName || member.email || "Participant",
+        ]),
+      ),
+    [accessState.directMembers],
+  );
+
+  const suggestedMembers = useMemo(
+    () => accessState.suggestedMembers.filter((member) => !member.isCurrentUser),
+    [accessState.suggestedMembers],
+  );
+
+  const clubMembersCount = accessState.readSummary.clubMembers || selectedConversation?.clubMemberCount || 0;
+  const selectedConversationNeedsAccess = selectedConversation?.targetType === "club" && clubMembersCount === 0;
+  const seenLatestCount = accessState.readSummary.seenLatestCount;
+  const totalMembers = accessState.readSummary.totalMembers || accessState.directMembers.length;
+
+  const eligibleDirectoryUsers = useMemo(() => {
+    if (!selectedConversation) return directoryUsers;
+    if (selectedConversation.targetType === "club") return directoryUsers;
+
+    return directoryUsers.filter((user) => ADMIN_ROLES.has(user.role ?? ""));
+  }, [directoryUsers, selectedConversation]);
+
+  const participantManagerDescription = useMemo(() => {
+    if (!selectedConversation) return "Manage who can access this conversation.";
+    if (selectedConversation.targetType === "club") {
+      return "Grant access to officers, club-linked accounts, or internal staff so this club thread is actually reachable from both sides.";
+    }
+    if (selectedConversation.targetType === "prospect") {
+      return "Prospect threads are internal by default. Add the right Student Life staff so intake, review, and follow-up stay coordinated.";
+    }
+    return "Admin chats should stay internal. Add or remove staff cleanly so the thread matches the actual working group.";
+  }, [selectedConversation]);
+
+  const directorySectionTitle = selectedConversation?.targetType === "club" ? "Add from workspace users" : "Add internal participant";
+  const directorySectionDescription = selectedConversation?.targetType === "club"
+    ? "Search existing workspace users and grant this chat directly."
+    : "Search admin accounts in this workspace and attach them to the conversation.";
+
+  const refreshAccessState = useCallback(async () => {
+    if (!selectedConversation) {
+      setAccessState(EMPTY_ACCESS_STATE);
+      return;
+    }
+
+    setAccessLoading(true);
+    try {
+      const nextState = await fetchConversationAccessState({
+        conversationId: selectedConversation.id,
+        clubId: selectedConversation.targetType === "club" ? selectedConversation.targetId : null,
+      });
+      setAccessState(nextState);
+    } finally {
+      setAccessLoading(false);
+    }
+  }, [selectedConversation]);
+
+  const userEligibleForConversation = useCallback(
+    (user: Pick<MessagingDirectoryUser, "role">) => {
+      if (!selectedConversation) return false;
+      if (selectedConversation.targetType === "club") return true;
+      return ADMIN_ROLES.has(user.role ?? "");
+    },
+    [selectedConversation],
+  );
+
+  const grantAccessAndRefresh = useCallback(
+    async (targetUserId: string, metadata?: Record<string, unknown>) => {
+      if (!selectedConversation) return;
+
+      setAddingAccess(true);
+      try {
+        await addConversationAccess({
+          conversationId: selectedConversation.id,
+          userId: targetUserId,
+        });
+
+        await Promise.all([refreshConversations(), refreshAccessState()]);
+        setEmailAccess("");
+
+        void logAuditEventSafe({
+          orgId,
+          category: "messaging",
+          action: "conversation_access_granted",
+          entityType: "conversation",
+          entityId: selectedConversation.id,
+          title: "Conversation access granted",
+          summary: `${selectedConversation.title} access was granted to a workspace user.`,
+          metadata: {
+            conversationTitle: selectedConversation.title,
+            targetType: selectedConversation.targetType,
+            targetId: selectedConversation.targetId,
+            grantedUserId: targetUserId,
+            ...metadata,
+          },
+        });
+
+        toast({
+          title: "Access granted",
+          description: "This user can now open the chat.",
+        });
+      } catch (error) {
+        toast({
+          variant: "destructive",
+          title: "Could not grant access",
+          description: error instanceof Error ? error.message : "Please retry.",
+        });
+      } finally {
+        setAddingAccess(false);
+      }
+    },
+    [orgId, refreshAccessState, refreshConversations, selectedConversation, toast],
   );
 
   useEffect(() => {
@@ -230,6 +403,27 @@ function Messaging() {
     if (!container || !autoScrollEnabled) return;
     container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [autoScrollEnabled, messages]);
+
+  useEffect(() => {
+    if (!selectedConversation) {
+      setAccessState(EMPTY_ACCESS_STATE);
+      return;
+    }
+
+    let active = true;
+    refreshAccessState().catch((error) => {
+      if (!active) return;
+      toast({
+        variant: "destructive",
+        title: "Could not load participants",
+        description: error instanceof Error ? error.message : "Please retry.",
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [refreshAccessState, selectedConversation, toast]);
 
   useEffect(() => {
     if (!newConversationOpen || !orgId || !userId) return;
@@ -310,37 +504,6 @@ function Messaging() {
       active = false;
     };
   }, [isAdminWorkspace, refreshConversations, toast, userId]);
-
-  useEffect(() => {
-    if (!accessDialogOpen || !selectedConversation || selectedConversation.targetType !== "club") return;
-
-    let active = true;
-    setAccessLoading(true);
-
-    fetchConversationAccessState({
-      conversationId: selectedConversation.id,
-      clubId: selectedConversation.targetId,
-    })
-      .then((state) => {
-        if (!active) return;
-        setAccessState(state);
-      })
-      .catch((error) => {
-        if (!active) return;
-        toast({
-          variant: "destructive",
-          title: "Could not load chat access",
-          description: error instanceof Error ? error.message : "Please retry.",
-        });
-      })
-      .finally(() => {
-        if (active) setAccessLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [accessDialogOpen, selectedConversation, toast]);
 
   useEffect(() => {
     if (!accessDialogOpen || !userId) return;
@@ -440,6 +603,16 @@ function Messaging() {
     try {
       const result = await syncClubMessagingPaths();
       await refreshConversations();
+      void logAuditEventSafe({
+        orgId,
+        category: "messaging",
+        action: "club_channels_synced",
+        entityType: "workspace",
+        entityId: orgId,
+        title: "Club channels synced",
+        summary: `${result.clubCount} clubs were checked for messaging coverage.`,
+        metadata: result,
+      });
       toast({
         title: "Club channels synced",
         description: `${result.clubCount} clubs checked, ${result.createdCount} channels created, ${result.connectedCount} connected to your inbox.`,
@@ -458,44 +631,69 @@ function Messaging() {
   const handleGrantAccess = async (targetUserId: string) => {
     if (!selectedConversation) return;
 
-    setAddingAccess(true);
-    try {
-      await addConversationAccess({
-        conversationId: selectedConversation.id,
-        userId: targetUserId,
-      });
-
-      await refreshConversations();
-
-      const [nextAccess, nextDirectory] = await Promise.all([
-        fetchConversationAccessState({
-          conversationId: selectedConversation.id,
-          clubId: selectedConversation.targetType === "club" ? selectedConversation.targetId : null,
-        }),
-        searchMessagingUsers({
-          orgId,
-          search: directorySearch,
-          excludeUserIds: Array.from(new Set([...Array.from(existingAccessUserIds), targetUserId])),
-          currentUserId: userId,
-        }),
-      ]);
-
-      setAccessState(nextAccess);
-      setDirectoryUsers(nextDirectory);
-      setEmailAccess("");
-
+    const candidate = directoryUsers.find((user) => user.id === targetUserId) ?? null;
+    if (candidate && !userEligibleForConversation(candidate)) {
       toast({
-        title: "Access granted",
-        description: "This user can now open the chat.",
+        variant: "destructive",
+        title: "Not allowed in this thread",
+        description: "Only internal admin accounts can be added to this conversation.",
+      });
+      return;
+    }
+
+    await grantAccessAndRefresh(targetUserId, {
+      source: candidate ? "directory" : "manual",
+      grantedRole: candidate?.role ?? null,
+      grantedEmail: candidate?.email ?? null,
+    });
+  };
+
+  const handleGrantSuggestedMember = async (member: ConversationAccessMember) => {
+    await grantAccessAndRefresh(member.id, {
+      source: "suggested_member",
+      grantedEmail: member.email,
+      grantedTags: member.tags,
+    });
+  };
+
+  const handleGrantAllSuggested = async () => {
+    if (suggestedMembers.length === 0) return;
+
+    setBulkAddingSuggested(true);
+    try {
+      for (const member of suggestedMembers) {
+        await addConversationAccess({
+          conversationId: selectedConversation!.id,
+          userId: member.id,
+        });
+      }
+
+      await Promise.all([refreshConversations(), refreshAccessState()]);
+      void logAuditEventSafe({
+        orgId,
+        category: "messaging",
+        action: "conversation_access_bulk_granted",
+        entityType: "conversation",
+        entityId: selectedConversation?.id ?? null,
+        title: "Suggested club-side access granted",
+        summary: `${suggestedMembers.length} suggested members were added to ${selectedConversation?.title ?? "the conversation"}.`,
+        metadata: {
+          conversationTitle: selectedConversation?.title ?? null,
+          grantedUserIds: suggestedMembers.map((member) => member.id),
+        },
+      });
+      toast({
+        title: "Suggested access granted",
+        description: `${suggestedMembers.length} members can now open this chat.`,
       });
     } catch (error) {
       toast({
         variant: "destructive",
-        title: "Could not grant access",
+        title: "Could not add suggested members",
         description: error instanceof Error ? error.message : "Please retry.",
       });
     } finally {
-      setAddingAccess(false);
+      setBulkAddingSuggested(false);
     }
   };
 
@@ -517,7 +715,20 @@ function Messaging() {
         return;
       }
 
-      await handleGrantAccess(user.id);
+      if (!userEligibleForConversation(user)) {
+        toast({
+          variant: "destructive",
+          title: "Not allowed in this thread",
+          description: "Only internal admin accounts can be added to this conversation.",
+        });
+        return;
+      }
+
+      await grantAccessAndRefresh(user.id, {
+        source: "email_lookup",
+        grantedEmail: user.email,
+        grantedRole: user.role,
+      });
     } catch (error) {
       toast({
         variant: "destructive",
@@ -527,10 +738,51 @@ function Messaging() {
     }
   };
 
+  const handleRemoveAccess = async (member: ConversationAccessMember) => {
+    if (!selectedConversation) return;
+
+    setRemovingMemberId(member.id);
+    try {
+      await removeConversationAccess({
+        conversationId: selectedConversation.id,
+        userId: member.id,
+      });
+      await Promise.all([refreshConversations(), refreshAccessState()]);
+      void logAuditEventSafe({
+        orgId,
+        category: "messaging",
+        action: "conversation_access_removed",
+        entityType: "conversation",
+        entityId: selectedConversation.id,
+        title: "Conversation access removed",
+        summary: `${member.fullName || member.email || "A workspace user"} was removed from ${selectedConversation.title}.`,
+        metadata: {
+          conversationTitle: selectedConversation.title,
+          targetType: selectedConversation.targetType,
+          removedUserId: member.id,
+          removedEmail: member.email,
+          removedTags: member.tags,
+        },
+      });
+      toast({
+        title: "Participant removed",
+        description: "This user no longer has access to the conversation.",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Could not remove participant",
+        description: error instanceof Error ? error.message : "Please retry.",
+      });
+    } finally {
+      setRemovingMemberId(null);
+    }
+  };
+
   const selectedMeta = selectedConversation ? CATEGORY_META[selectedConversation.category] : null;
-  const selectedConversationNeedsAccess =
-    selectedConversation?.targetType === "club" &&
-    selectedConversation.clubMemberCount === 0;
+  const readHeadline = accessState.latestMessageAt
+    ? `${seenLatestCount} of ${Math.max(totalMembers, 1)} participants have seen the latest message.`
+    : "No messages yet, so there is no read state to show yet.";
 
   return (
     <div className="flex h-[calc(100vh-6rem)] overflow-hidden rounded-[28px] border border-slate-200 bg-background shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
@@ -680,7 +932,7 @@ function Messaging() {
 
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
+                                    <div className="min-w-0">
                                       <div className="flex items-center gap-2">
                                         <p className="truncate text-sm font-semibold">{conversation.title}</p>
                                         {conversation.needsAttention && (
@@ -788,35 +1040,38 @@ function Messaging() {
                     <Badge className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", selectedMeta.summaryTone)}>
                       {selectedMeta.label}
                     </Badge>
+                    {selectedConversationNeedsAccess && (
+                      <Badge className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                        Setup needed
+                      </Badge>
+                    )}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
                     <span>{selectedMeta.subtitle}</span>
                     <span className="text-slate-300">•</span>
-                    <span>
-                      {selectedConversation.targetType === "club"
-                        ? `${selectedConversation.clubMemberCount} club-side ${selectedConversation.clubMemberCount === 1 ? "member" : "members"}`
-                        : `${selectedConversation.adminMemberCount} admin participants`}
-                    </span>
+                    <span>{totalMembers} participants</span>
                     <span className="text-slate-300">•</span>
-                    <span>
-                      {selectedConversation.lastMessageAt
-                        ? `Last activity ${formatDistanceToNowStrict(new Date(selectedConversation.lastMessageAt), {
-                            addSuffix: true,
-                          })}`
-                        : "No messages yet"}
-                    </span>
+                    <span>{readHeadline}</span>
                   </div>
                 </div>
-                {selectedConversation.targetType === "club" && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={() => setDetailsOpen(true)}
+                  >
+                    <PanelRightOpen className="mr-2 h-4 w-4" />
+                    Details
+                  </Button>
                   <Button
                     variant="outline"
                     className="rounded-full"
                     onClick={() => setAccessDialogOpen(true)}
                   >
                     <UserPlus className="mr-2 h-4 w-4" />
-                    Manage access
+                    Participants
                   </Button>
-                )}
+                </div>
               </div>
             </div>
 
@@ -844,18 +1099,54 @@ function Messaging() {
                             <AlertTriangle className="h-4 w-4" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-amber-950">This club chat is not reachable from the club side yet.</p>
+                            <p className="text-sm font-semibold text-amber-950">This club chat is still one-sided.</p>
                             <p className="mt-1 text-sm leading-6 text-amber-900/80">
-                              The conversation exists for this club, but no officer or linked club account has access yet. Add access before expecting replies.
+                              The thread exists, but no officer or club-linked account can reply yet. {suggestedMembers.length > 0
+                                ? `There ${suggestedMembers.length === 1 ? "is" : "are"} ${suggestedMembers.length} recommended ${suggestedMembers.length === 1 ? "account" : "accounts"} ready to add.`
+                                : "You still need to onboard or link a club-side user before expecting replies."}
                             </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {suggestedMembers.length > 0 && (
+                                <Button
+                                  variant="outline"
+                                  className="rounded-full border-amber-300 bg-white"
+                                  onClick={handleGrantAllSuggested}
+                                  disabled={bulkAddingSuggested || addingAccess}
+                                >
+                                  {bulkAddingSuggested ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                                  Add recommended users
+                                </Button>
+                              )}
+                              <Button variant="outline" className="rounded-full border-amber-300 bg-white" onClick={() => setAccessDialogOpen(true)}>
+                                <Users className="mr-2 h-4 w-4" />
+                                Manage participants
+                              </Button>
+                              <Button asChild variant="outline" className="rounded-full border-amber-300 bg-white">
+                                <Link to="/officers">Open officers</Link>
+                              </Button>
+                            </div>
                           </div>
-                          <Button variant="outline" className="rounded-full border-amber-300 bg-white" onClick={() => setAccessDialogOpen(true)}>
-                            <UserPlus className="mr-2 h-4 w-4" />
-                            Add access
-                          </Button>
                         </div>
                       </div>
                     )}
+
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Participants</p>
+                        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{totalMembers}</p>
+                        <p className="mt-1 text-xs text-slate-500">Admins and club-side members currently attached.</p>
+                      </div>
+                      <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Seen latest</p>
+                        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{seenLatestCount}</p>
+                        <p className="mt-1 text-xs text-slate-500">Participants whose read state is at or beyond the latest message.</p>
+                      </div>
+                      <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Club-side readiness</p>
+                        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{clubMembersCount}</p>
+                        <p className="mt-1 text-xs text-slate-500">Club-linked participants who can respond from the other side.</p>
+                      </div>
+                    </div>
 
                     {hasMoreMessages && (
                       <div className="flex justify-center">
@@ -881,10 +1172,10 @@ function Messaging() {
 
                     {messages.map((message) => {
                       const mine = message.senderId === userId;
-                      const senderName = mine ? "You" : selectedConversation.title;
+                      const senderName = mine ? "You" : participantMap.get(message.senderId) || selectedConversation.title;
 
                       return (
-                        <div key={message.id} className={cn("flex w-full", mine ? "justify-end" : "justify-start")}>
+                        <div key={message.id} className={cn("flex w-full", mine ? "justify-end" : "justify-start")}> 
                           <div className="max-w-[78%] space-y-2">
                             <div className={cn("px-1 text-[11px] font-medium text-slate-400", mine && "text-right")}>
                               {senderName}
@@ -938,6 +1229,189 @@ function Messaging() {
         )}
       </main>
 
+      <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <SheetContent side="right" className="w-full max-w-xl border-slate-200 px-0">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <SheetHeader>
+              <SheetTitle className="text-2xl tracking-tight">Conversation details</SheetTitle>
+              <SheetDescription>
+                Review participant state, read posture, and setup readiness before you treat this thread as fully operational.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <ScrollArea className="h-full px-6 pb-6">
+            <div className="space-y-5 py-5">
+              {selectedConversation && (
+                <section className="rounded-[28px] border border-slate-200 bg-slate-50/70 p-5">
+                  <div className="flex items-start gap-3">
+                    <Avatar className="h-12 w-12 rounded-2xl border border-slate-200 bg-white">
+                      <AvatarImage src={selectedConversation.avatarUrl ?? undefined} />
+                      <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                        {selectedConversation.title.slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-lg font-semibold text-slate-950">{selectedConversation.title}</p>
+                        <Badge className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", selectedMeta?.summaryTone)}>
+                          {selectedMeta?.label}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">{selectedMeta?.subtitle}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge variant="secondary" className="rounded-full bg-white text-slate-700">{totalMembers} participants</Badge>
+                        <Badge variant="secondary" className="rounded-full bg-white text-slate-700">{seenLatestCount} seen latest</Badge>
+                        {selectedConversationNeedsAccess && (
+                          <Badge className="rounded-full border border-amber-200 bg-amber-50 text-amber-700">Club setup needed</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              <section className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Read posture</p>
+                  <p className="mt-2 text-xl font-semibold text-slate-950">{seenLatestCount}/{Math.max(totalMembers, 1)}</p>
+                  <p className="mt-1 text-xs text-slate-500">Participants who have seen the latest message.</p>
+                </div>
+                <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Latest activity</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-950">
+                    {accessState.latestMessageAt
+                      ? formatDistanceToNowStrict(new Date(accessState.latestMessageAt), { addSuffix: true })
+                      : "No messages yet"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">{accessState.latestMessagePreview || "No message preview yet."}</p>
+                </div>
+                <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Setup readiness</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-950">
+                    {selectedConversationNeedsAccess ? "Needs club-side participant" : "Operational"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {selectedConversationNeedsAccess
+                      ? `${suggestedMembers.length} recommended accounts are available to add.`
+                      : "The thread has at least one reachable participant on each required side."}
+                  </p>
+                </div>
+              </section>
+
+              <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">Participants</p>
+                    <p className="mt-1 text-xs text-slate-500">Current membership and read-state visibility.</p>
+                  </div>
+                  <Button variant="outline" className="rounded-full" onClick={() => setAccessDialogOpen(true)}>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Manage access
+                  </Button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {accessLoading ? (
+                    Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-16 w-full rounded-2xl" />)
+                  ) : accessState.directMembers.length === 0 ? (
+                    <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No participants found for this conversation.</p>
+                  ) : (
+                    accessState.directMembers.map((member) => {
+                      const readState = formatReadState(member);
+                      return (
+                        <div key={member.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                          <Avatar className="h-10 w-10 rounded-2xl">
+                            <AvatarImage src={member.avatarUrl ?? undefined} />
+                            <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                              {(member.fullName || member.email || "U").slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-medium text-slate-950">{member.fullName || member.email || "Unnamed user"}</p>
+                              {member.tags.map((tag) => (
+                                <Badge key={`${member.id}-${tag}`} variant="secondary" className="rounded-full bg-white text-[11px] text-slate-600">
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                            <p className="truncate text-xs text-slate-500">{member.email || "No email on file"}</p>
+                          </div>
+                          <Badge className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", readState.tone)}>
+                            {readState.label}
+                          </Badge>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              {selectedConversation?.targetType === "club" && (
+                <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">Recommended club-side accounts</p>
+                      <p className="mt-1 text-xs text-slate-500">Officer records and club-linked accounts that can make this thread two-way.</p>
+                    </div>
+                    {suggestedMembers.length > 0 && (
+                      <Button variant="outline" className="rounded-full" onClick={handleGrantAllSuggested} disabled={bulkAddingSuggested || addingAccess}>
+                        {bulkAddingSuggested ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                        Add all
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    {accessLoading ? (
+                      Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-16 w-full rounded-2xl" />)
+                    ) : suggestedMembers.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
+                        No recommended club-side accounts are linked yet. Create or link officers in the roster first.
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button asChild variant="outline" className="rounded-full">
+                            <Link to="/officers">Open officers</Link>
+                          </Button>
+                          <Button asChild variant="outline" className="rounded-full">
+                            <Link to="/users">Open User Management</Link>
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      suggestedMembers.map((member) => (
+                        <div key={member.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                          <Avatar className="h-10 w-10 rounded-2xl">
+                            <AvatarImage src={member.avatarUrl ?? undefined} />
+                            <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                              {(member.fullName || member.email || "U").slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-medium text-slate-950">{member.fullName || member.email || "Unnamed user"}</p>
+                              {member.tags.map((tag) => (
+                                <Badge key={`${member.id}-${tag}`} variant="secondary" className="rounded-full bg-white text-[11px] text-slate-600">
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                            <p className="truncate text-xs text-slate-500">{member.email || "No email on file"}</p>
+                          </div>
+                          <Button size="sm" className="rounded-full" onClick={() => handleGrantSuggestedMember(member)} disabled={addingAccess}>
+                            Add
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              )}
+            </div>
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
+
       <Dialog
         open={newConversationOpen}
         onOpenChange={(open) => {
@@ -953,7 +1427,7 @@ function Messaging() {
             <DialogHeader>
               <DialogTitle className="text-2xl tracking-tight">Start conversation</DialogTitle>
               <DialogDescription className="pt-1 text-sm text-slate-500">
-                Choose the right audience first. Club and prospect chats route to a club-linked account, while admin chats stay internal.
+                Choose the right audience first. Club and prospect chats route to a club-linked workflow, while admin chats stay internal.
               </DialogDescription>
             </DialogHeader>
           </div>
@@ -1054,23 +1528,26 @@ function Messaging() {
           }
         }}
       >
-        <DialogContent className="max-w-3xl rounded-[28px] border-slate-200 p-0">
+        <DialogContent className="max-w-4xl rounded-[28px] border-slate-200 p-0">
           <div className="border-b border-slate-200 px-6 py-5">
             <DialogHeader>
-              <DialogTitle className="text-2xl tracking-tight">Manage chat access</DialogTitle>
+              <DialogTitle className="text-2xl tracking-tight">Manage participants</DialogTitle>
               <DialogDescription className="pt-1 text-sm text-slate-500">
-                Grant direct access to this club channel from the workspace user directory, or add an existing account by email.
+                {participantManagerDescription}
               </DialogDescription>
             </DialogHeader>
           </div>
 
-          <div className="grid gap-6 px-6 py-5 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="grid gap-6 px-6 py-5 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-5">
               <section className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-slate-950">Current access</p>
-                    <p className="mt-1 text-xs text-slate-500">Direct room members plus club-linked users already attached to this club.</p>
+                    <p className="text-sm font-semibold text-slate-950">Current participants</p>
+                    <p className="mt-1 text-xs text-slate-500">Direct room members with live read-state visibility.</p>
+                  </div>
+                  <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                    {seenLatestCount}/{Math.max(totalMembers, 1)} seen latest
                   </div>
                 </div>
 
@@ -1083,88 +1560,136 @@ function Messaging() {
                 {accessLoading ? (
                   <div className="mt-4 space-y-2">
                     {Array.from({ length: 4 }).map((_, index) => (
-                      <Skeleton key={index} className="h-14 w-full rounded-2xl" />
+                      <Skeleton key={index} className="h-16 w-full rounded-2xl" />
                     ))}
                   </div>
                 ) : (
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Direct room members</p>
-                      <div className="space-y-2">
-                        {accessState.directMembers.length === 0 ? (
-                          <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No direct room members yet.</p>
-                        ) : (
-                          accessState.directMembers.map((member) => (
-                            <div key={`direct-${member.id}`} className="flex items-center gap-3 rounded-2xl border bg-white px-3 py-3">
-                              <Avatar className="h-10 w-10 rounded-2xl">
-                                <AvatarImage src={member.avatarUrl ?? undefined} />
-                                <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
-                                  {(member.fullName || member.email || "U").slice(0, 2).toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-slate-950">{member.fullName || member.email || "Unnamed user"}</p>
-                                <p className="truncate text-xs text-slate-500">{member.email || "No email on file"}</p>
-                              </div>
-                              <div className="flex flex-wrap justify-end gap-1">
-                                {member.tags.map((tag) => (
-                                  <Badge key={tag} variant="secondary" className="rounded-full bg-slate-100 text-[11px] text-slate-600">
-                                    {tag}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+                  <div className="mt-4 space-y-2">
+                    {accessState.directMembers.length === 0 ? (
+                      <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No direct room members yet.</p>
+                    ) : (
+                      accessState.directMembers.map((member) => {
+                        const readState = formatReadState(member);
+                        const adminMembers = accessState.directMembers.filter((entry) => entry.memberType === "admin").length;
+                        const canRemove = !member.isCurrentUser && !(member.memberType === "admin" && adminMembers <= 1);
 
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Club-linked access</p>
-                      <div className="space-y-2">
-                        {accessState.clubLinkedMembers.length === 0 ? (
-                          <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No linked club members or officers yet.</p>
-                        ) : (
-                          accessState.clubLinkedMembers.map((member) => (
-                            <div key={`linked-${member.id}`} className="flex items-center gap-3 rounded-2xl border bg-white px-3 py-3">
-                              <Avatar className="h-10 w-10 rounded-2xl">
-                                <AvatarImage src={member.avatarUrl ?? undefined} />
-                                <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
-                                  {(member.fullName || member.email || "U").slice(0, 2).toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0 flex-1">
+                        return (
+                          <div key={`direct-${member.id}`} className="flex items-center gap-3 rounded-2xl border bg-white px-3 py-3">
+                            <Avatar className="h-10 w-10 rounded-2xl">
+                              <AvatarImage src={member.avatarUrl ?? undefined} />
+                              <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                                {(member.fullName || member.email || "U").slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <p className="truncate text-sm font-medium text-slate-950">{member.fullName || member.email || "Unnamed user"}</p>
-                                <p className="truncate text-xs text-slate-500">{member.email || "No email on file"}</p>
-                              </div>
-                              <div className="flex flex-wrap justify-end gap-1">
                                 {member.tags.map((tag) => (
-                                  <Badge key={tag} variant="secondary" className="rounded-full bg-slate-100 text-[11px] text-slate-600">
+                                  <Badge key={`${member.id}-${tag}`} variant="secondary" className="rounded-full bg-slate-100 text-[11px] text-slate-600">
                                     {tag}
                                   </Badge>
                                 ))}
                               </div>
+                              <p className="truncate text-xs text-slate-500">{member.email || "No email on file"}</p>
+                              <div className="mt-2">
+                                <Badge className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", readState.tone)}>
+                                  {readState.label}
+                                </Badge>
+                              </div>
                             </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-10 w-10 rounded-2xl"
+                              onClick={() => handleRemoveAccess(member)}
+                              disabled={!canRemove || removingMemberId === member.id}
+                            >
+                              {removingMemberId === member.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 )}
               </section>
+
+              {selectedConversation?.targetType === "club" && (
+                <section className="rounded-[24px] border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">Recommended club-side access</p>
+                      <p className="mt-1 text-xs text-slate-500">Officer records and club-linked accounts discovered from the workspace.</p>
+                    </div>
+                    {suggestedMembers.length > 0 && (
+                      <Button variant="outline" className="rounded-full" onClick={handleGrantAllSuggested} disabled={bulkAddingSuggested || addingAccess}>
+                        {bulkAddingSuggested ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                        Add all
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    {accessLoading ? (
+                      Array.from({ length: 3 }).map((_, index) => (
+                        <Skeleton key={index} className="h-16 w-full rounded-2xl" />
+                      ))
+                    ) : suggestedMembers.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">
+                        No linked officer or club accounts are ready yet.
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button asChild variant="outline" className="rounded-full">
+                            <Link to="/officers">Open officers</Link>
+                          </Button>
+                          <Button asChild variant="outline" className="rounded-full">
+                            <Link to="/users">Open User Management</Link>
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      suggestedMembers.map((member) => (
+                        <div key={`suggested-${member.id}`} className="flex items-center gap-3 rounded-2xl border bg-slate-50/70 px-3 py-3">
+                          <Avatar className="h-10 w-10 rounded-2xl">
+                            <AvatarImage src={member.avatarUrl ?? undefined} />
+                            <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
+                              {(member.fullName || member.email || "U").slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-medium text-slate-950">{member.fullName || member.email || "Unnamed user"}</p>
+                              {member.tags.map((tag) => (
+                                <Badge key={`${member.id}-${tag}`} variant="secondary" className="rounded-full bg-white text-[11px] text-slate-600">
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                            <p className="truncate text-xs text-slate-500">{member.email || "No email on file"}</p>
+                          </div>
+                          <Button size="sm" className="rounded-full" onClick={() => handleGrantSuggestedMember(member)} disabled={addingAccess}>
+                            Add
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              )}
             </div>
 
             <div className="space-y-5">
               <section className="rounded-[24px] border border-slate-200 bg-white p-4">
-                <p className="text-sm font-semibold text-slate-950">Add from User Management</p>
-                <p className="mt-1 text-xs text-slate-500">Search existing workspace users and grant this chat directly.</p>
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">{directorySectionTitle}</p>
+                  <p className="mt-1 text-xs text-slate-500">{directorySectionDescription}</p>
+                </div>
 
                 <div className="relative mt-4">
                   <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
                   <Input
                     value={directorySearch}
                     onChange={(event) => setDirectorySearch(event.target.value)}
-                    placeholder="Search workspace users..."
+                    placeholder={selectedConversation?.targetType === "club" ? "Search workspace users..." : "Search admins..."}
                     className="h-11 rounded-2xl border-slate-200 pl-10"
                   />
                 </div>
@@ -1174,10 +1699,10 @@ function Messaging() {
                     Array.from({ length: 4 }).map((_, index) => (
                       <Skeleton key={index} className="h-14 w-full rounded-2xl" />
                     ))
-                  ) : directoryUsers.length === 0 ? (
-                    <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No additional users match the current search.</p>
+                  ) : eligibleDirectoryUsers.length === 0 ? (
+                    <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-sm text-slate-500">No additional eligible users match the current search.</p>
                   ) : (
-                    directoryUsers.map((user) => (
+                    eligibleDirectoryUsers.map((user) => (
                       <div key={user.id} className="flex items-center gap-3 rounded-2xl border bg-slate-50/70 px-3 py-3">
                         <Avatar className="h-10 w-10 rounded-2xl">
                           <AvatarImage src={user.avatarUrl ?? undefined} />
@@ -1205,7 +1730,9 @@ function Messaging() {
 
               <section className="rounded-[24px] border border-slate-200 bg-white p-4">
                 <p className="text-sm font-semibold text-slate-950">Quick add by email</p>
-                <p className="mt-1 text-xs text-slate-500">Only existing workspace accounts can be granted directly here.</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Only existing workspace accounts can be granted directly here.
+                </p>
 
                 <div className="mt-4 flex gap-2">
                   <div className="relative flex-1">
@@ -1225,7 +1752,7 @@ function Messaging() {
                 <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-4">
                   <p className="text-sm font-medium text-slate-700">Need to create or onboard the user first?</p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Create the account or link them to the club first, then come back here to grant direct chat access.
+                    Create the account, assign workspace access, or link the person to the club first. Then come back here to grant the chat directly.
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button asChild variant="outline" className="rounded-full">
@@ -1234,6 +1761,11 @@ function Messaging() {
                     <Button asChild variant="outline" className="rounded-full">
                       <Link to="/members/add">Open Add Members</Link>
                     </Button>
+                    {selectedConversation?.targetType === "club" && (
+                      <Button asChild variant="outline" className="rounded-full">
+                        <Link to="/officers">Open officers</Link>
+                      </Button>
+                    )}
                   </div>
                 </div>
               </section>

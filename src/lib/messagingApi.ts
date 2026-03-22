@@ -72,12 +72,26 @@ export type ConversationAccessMember = {
   fullName: string | null;
   email: string | null;
   avatarUrl: string | null;
+  memberType: MemberType;
+  clubId: string | null;
+  isCurrentUser: boolean;
+  isSuggested: boolean;
+  lastReadAt: string | null;
+  readState: "seen_latest" | "read_earlier" | "unread" | "no_messages" | "not_added";
   tags: string[];
 };
 
 export type ConversationAccessState = {
   directMembers: ConversationAccessMember[];
-  clubLinkedMembers: ConversationAccessMember[];
+  suggestedMembers: ConversationAccessMember[];
+  latestMessageAt: string | null;
+  latestMessagePreview: string;
+  readSummary: {
+    totalMembers: number;
+    adminMembers: number;
+    clubMembers: number;
+    seenLatestCount: number;
+  };
 };
 
 export type ClubMessagingSyncResult = {
@@ -174,20 +188,6 @@ function mapDirectoryUser(profile: MessagingProfile & { avatar_url?: string | nu
     avatarUrl: profile.avatar_url ?? null,
     role: profile.role ?? null,
     clubId: profile.club_id ?? null,
-  };
-}
-
-function buildAccessMember(
-  profile: MessagingDirectoryUser | null,
-  fallbackUserId: string,
-  tags: string[],
-): ConversationAccessMember {
-  return {
-    id: fallbackUserId,
-    fullName: profile?.fullName ?? null,
-    email: profile?.email ?? null,
-    avatarUrl: profile?.avatarUrl ?? null,
-    tags,
   };
 }
 
@@ -719,84 +719,36 @@ export async function fetchConversationAccessState(params: {
   conversationId: string;
   clubId: string | null;
 }) {
-  const membersResult = await supabase
-    .from("admin_conversation_members")
-    .select("conversation_id, org_id, user_id, role, club_id")
-    .eq("conversation_id", params.conversationId);
-
-  if (membersResult.error) throw membersResult.error;
-
-  const members = (membersResult.data ?? []) as AdminConversationMemberRow[];
-  const directUserIds = Array.from(new Set(members.map((row) => row.user_id)));
-  const directTags = new Map<string, Set<string>>();
-
-  members.forEach((member) => {
-    const tags = directTags.get(member.user_id) ?? new Set<string>();
-    tags.add(member.role === "admin" ? "Admin" : "Club access");
-    if (member.club_id) tags.add("Club-linked");
-    directTags.set(member.user_id, tags);
+  const result = await supabase.rpc("get_admin_conversation_access_state", {
+    target_conversation_id: params.conversationId,
   });
 
-  const suggestedTags = new Map<string, Set<string>>();
-  const suggestedIds = new Set<string>();
+  if (result.error) throw result.error;
 
-  if (params.clubId) {
-    const [officersResult, clubProfileResult] = await Promise.all([
-      supabase
-        .from("officers")
-        .select("user_id")
-        .eq("club_id", params.clubId)
-        .not("user_id", "is", null),
-      supabase
-        .from("profiles")
-        .select("id")
-        .eq("club_id", params.clubId),
-    ]);
-
-    if (officersResult.error) throw officersResult.error;
-    if (clubProfileResult.error) throw clubProfileResult.error;
-
-    ((officersResult.data ?? []) as { user_id: string | null }[]).forEach((row) => {
-      if (!row.user_id || directUserIds.includes(row.user_id)) return;
-      suggestedIds.add(row.user_id);
-      const tags = suggestedTags.get(row.user_id) ?? new Set<string>();
-      tags.add("Officer");
-      suggestedTags.set(row.user_id, tags);
-    });
-
-    ((clubProfileResult.data ?? []) as { id: string }[]).forEach((row) => {
-      if (!row.id || directUserIds.includes(row.id)) return;
-      suggestedIds.add(row.id);
-      const tags = suggestedTags.get(row.id) ?? new Set<string>();
-      tags.add("Club account");
-      suggestedTags.set(row.id, tags);
-    });
-  }
-
-  const userIds = Array.from(new Set([...directUserIds, ...Array.from(suggestedIds)]));
-  const profilesMap = new Map<string, MessagingDirectoryUser>();
-
-  if (userIds.length > 0) {
-    const profilesResult = await supabase
-      .from("profiles")
-      .select("id, full_name, email, avatar_url, role, club_id")
-      .in("id", userIds);
-
-    if (profilesResult.error) throw profilesResult.error;
-
-    ((profilesResult.data ?? []) as (MessagingProfile & { avatar_url?: string | null })[]).forEach((profile) => {
-      const mapped = mapDirectoryUser(profile);
-      profilesMap.set(mapped.id, mapped);
-    });
-  }
+  const payload = (result.data ?? {}) as {
+    directMembers?: ConversationAccessMember[];
+    suggestedMembers?: ConversationAccessMember[];
+    latestMessageAt?: string | null;
+    latestMessagePreview?: string | null;
+    readSummary?: {
+      totalMembers?: number;
+      adminMembers?: number;
+      clubMembers?: number;
+      seenLatestCount?: number;
+    } | null;
+  };
 
   return {
-    directMembers: directUserIds.map((userId) =>
-      buildAccessMember(profilesMap.get(userId) ?? null, userId, Array.from(directTags.get(userId) ?? [])),
-    ),
-    clubLinkedMembers: Array.from(suggestedIds).map((userId) =>
-      buildAccessMember(profilesMap.get(userId) ?? null, userId, Array.from(suggestedTags.get(userId) ?? [])),
-    ),
+    directMembers: payload.directMembers ?? [],
+    suggestedMembers: payload.suggestedMembers ?? [],
+    latestMessageAt: payload.latestMessageAt ?? null,
+    latestMessagePreview: payload.latestMessagePreview ?? "",
+    readSummary: {
+      totalMembers: payload.readSummary?.totalMembers ?? 0,
+      adminMembers: payload.readSummary?.adminMembers ?? 0,
+      clubMembers: payload.readSummary?.clubMembers ?? 0,
+      seenLatestCount: payload.readSummary?.seenLatestCount ?? 0,
+    },
   } satisfies ConversationAccessState;
 }
 
@@ -805,6 +757,18 @@ export async function addConversationAccess(params: {
   userId: string;
 }) {
   const result = await supabase.rpc("add_admin_conversation_member", {
+    target_conversation_id: params.conversationId,
+    target_user_id: params.userId,
+  });
+
+  if (result.error) throw result.error;
+}
+
+export async function removeConversationAccess(params: {
+  conversationId: string;
+  userId: string;
+}) {
+  const result = await supabase.rpc("remove_admin_conversation_member", {
     target_conversation_id: params.conversationId,
     target_user_id: params.userId,
   });
