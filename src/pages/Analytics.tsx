@@ -108,6 +108,19 @@ function isSchemaError(error: { code?: string; message?: string } | null | undef
   );
 }
 
+function isAccessError(error: { code?: string; message?: string; details?: string; hint?: string } | null | undefined) {
+  if (!error) return false;
+  if (error.code === "42501" || error.code === "PGRST301") return true;
+
+  const message = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
+  return (
+    message.includes("permission denied") ||
+    message.includes("not allowed") ||
+    message.includes("forbidden") ||
+    message.includes("row-level security")
+  );
+}
+
 async function fetchOptionalTable<T>(table: string, columns: string, apply?: (query: any) => any) {
   let query = supabase.from(table).select(columns);
   if (apply) {
@@ -122,7 +135,7 @@ async function fetchOptionalTable<T>(table: string, columns: string, apply?: (qu
     };
   }
 
-  if (isSchemaError(error)) {
+  if (isSchemaError(error) || isAccessError(error)) {
     return {
       data: [] as T[],
       missing: true,
@@ -243,60 +256,61 @@ const Analytics = () => {
           eventsResult,
           officersResult,
           postsResult,
-          forms,
+          formsResult,
         ] = await Promise.all([
           clubIds.length
-            ? supabase
-                .from("club_members")
-                .select("id,club_id,user_id,created_at")
-                .in("club_id", clubIds)
-            : Promise.resolve({ data: [] as MemberRow[], error: null }),
+            ? fetchOptionalTable<MemberRow>("club_members", "id,club_id,user_id,created_at", (query) =>
+                query.in("club_id", clubIds)
+              )
+            : Promise.resolve({ data: [] as MemberRow[], missing: true }),
           clubIds.length
-            ? supabase
-                .from("events")
-                .select("id,club_id,event_date,created_at,approved")
-                .in("club_id", clubIds)
-            : Promise.resolve({ data: [] as EventRow[], error: null }),
+            ? fetchOptionalTable<EventRow>("events", "id,club_id,event_date,created_at,approved", (query) =>
+                query.in("club_id", clubIds)
+              )
+            : Promise.resolve({ data: [] as EventRow[], missing: true }),
           clubIds.length
-            ? supabase
-                .from("officers")
-                .select("id,club_id,approved")
-                .in("club_id", clubIds)
-            : Promise.resolve({ data: [] as OfficerRow[], error: null }),
+            ? fetchOptionalTable<OfficerRow>("officers", "id,club_id,approved", (query) =>
+                query.in("club_id", clubIds)
+              )
+            : Promise.resolve({ data: [] as OfficerRow[], missing: true }),
           clubIds.length
             ? fetchOptionalTable<PostRow>("posts", "id,club_id,created_at", (query) =>
                 query.in("club_id", clubIds)
               )
             : Promise.resolve({ data: [] as PostRow[], missing: true }),
-          listForms(orgId),
+          listForms(orgId)
+            .then((forms) => ({ data: forms, missing: false }))
+            .catch((error) => {
+              if (isSchemaError(error) || isAccessError(error)) {
+                return { data: [], missing: true };
+              }
+              throw error;
+            }),
         ]);
-
-        if (membersResult.error) throw membersResult.error;
-        if (eventsResult.error) throw eventsResult.error;
-        if (officersResult.error) throw officersResult.error;
 
         if (!active) return;
 
-        const members = (membersResult.data as MemberRow[]) ?? [];
-        const events = (eventsResult.data as EventRow[]) ?? [];
-        const officers = (officersResult.data as OfficerRow[]) ?? [];
+        const members = membersResult.data;
+        const events = eventsResult.data;
+        const officers = officersResult.data;
         const postsData = postsResult.data;
-        const formIds = forms.map((form) => form.id);
+        const formIds = formsResult.data.map((form) => form.id);
 
         let formRows: FormSubmissionRow[] = [];
         if (formIds.length) {
-          const responsesResult = await supabase
-            .from("form_responses")
-            .select("id, form_id, created_at")
-            .in("form_id", formIds);
+          const responsesResult = await fetchOptionalTable<FormSubmissionRow>(
+            "form_responses",
+            "id, form_id, created_at",
+            (query) => query.in("form_id", formIds),
+          );
 
-          if (!responsesResult.error) {
-            formRows = ((responsesResult.data ?? []) as FormSubmissionRow[]).map((row) => ({
+          if (!responsesResult.missing) {
+            formRows = responsesResult.data.map((row) => ({
               id: row.id,
               form_id: row.form_id ?? null,
               created_at: row.created_at ?? null,
             }));
-          } else if (isSchemaError(responsesResult.error)) {
+          } else {
             const legacyResult = await fetchOptionalTable<FormSubmissionRow>(
               "form_submissions",
               "id, form_id, submitted_at",
@@ -308,8 +322,6 @@ const Analytics = () => {
               form_id: row.form_id ?? null,
               created_at: row.submitted_at ?? row.created_at ?? null,
             }));
-          } else {
-            throw responsesResult.error;
           }
         }
 
