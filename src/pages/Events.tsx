@@ -807,27 +807,32 @@ function EventOperationalCard({
   onStatusChange: (eventId: string, approved: boolean | null) => Promise<void>;
   updatingStatus: boolean;
 }) {
+  const compactDescription = truncateWords(
+    event.description || "No event description has been added yet.",
+    28,
+  );
+
   return (
     <article className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
       {event.cover_image_url ? (
-        <img src={event.cover_image_url} alt={event.name} className="h-40 w-full object-cover" />
+        <img src={event.cover_image_url} alt={event.name} className="h-28 w-full object-cover" />
       ) : (
-        <div className="flex h-28 items-center justify-center bg-[linear-gradient(135deg,#eff6ff_0%,#f8fafc_50%,#eef2ff_100%)] text-slate-500">
-          <Sparkles className="h-7 w-7" />
+        <div className="flex h-20 items-center justify-center bg-[linear-gradient(135deg,#eff6ff_0%,#f8fafc_50%,#eef2ff_100%)] text-slate-500">
+          <Sparkles className="h-6 w-6" />
         </div>
       )}
 
-      <div className="space-y-5 px-5 py-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <div className="space-y-4 px-5 py-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-xl font-semibold tracking-tight text-slate-950">{event.name}</h3>
+              <h3 className="text-lg font-semibold tracking-tight text-slate-950">{event.name}</h3>
               <Badge className={cn("rounded-full border-0", event.approved === true ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800")}>
                 {event.approved === true ? "Approved" : "Pending review"}
               </Badge>
               <StatusBadge tone={event.health} approved={event.approved === true} />
             </div>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{event.description || "No event description has been added yet."}</p>
+            <p className="mt-2 text-sm leading-7 text-slate-600">{compactDescription}</p>
           </div>
 
           <div className="flex flex-wrap gap-2 xl:justify-end">
@@ -852,18 +857,18 @@ function EventOperationalCard({
           <MetricPill icon={Users} label="Status" value={event.isPast ? "Past" : event.isUpcoming ? "Upcoming" : "Unscheduled"} />
         </div>
 
-        <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+        <div className="grid gap-2.5 text-sm text-slate-600 sm:grid-cols-2">
+          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
             <CalendarClock className="h-4 w-4 text-slate-400" />
             <span>{event.time || "Time not set"}</span>
           </div>
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
             <MapPin className="h-4 w-4 text-slate-400" />
             <span>{event.location || "Location not set"}</span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-1">
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
           {event.attentionReasons.length > 0 ? (
             event.attentionReasons.map((reason) => (
               <Badge key={reason} variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-slate-700">
@@ -884,14 +889,23 @@ function EventOperationalCard({
 
 function MetricPill({ icon: Icon, label, value }: { icon: typeof CalendarClock; label: string; value: string }) {
   return (
-    <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3">
+    <div className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-3.5 py-3">
       <div className="flex items-center justify-between gap-2 text-slate-500">
         <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
         <Icon className="h-4 w-4" />
       </div>
-      <p className="mt-2 text-lg font-semibold text-slate-950">{value}</p>
+      <p className="mt-1.5 text-base font-semibold text-slate-950">{value}</p>
     </div>
   );
+}
+
+function truncateWords(value: string, maxWords: number) {
+  const words = value.trim().split(/\s+/);
+  if (words.length <= maxWords) {
+    return value;
+  }
+
+  return `${words.slice(0, maxWords).join(" ")}...`;
 }
 
 function StatusBadge({ tone, approved }: { tone: EventInsight["health"] | "strong"; approved: boolean }) {
