@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { primaryLinks, manageLinks, accountLinks, matchesSidebarPath } from "./Sidebar";
+import { dashboardLink, flatSidebarLinks, matchesSidebarPath, sidebarGroups } from "./Sidebar";
 import type { SidebarLink } from "./Sidebar";
 import { useAuth } from "@/context/AuthContext";
 
@@ -35,8 +35,7 @@ function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const pathname = location.pathname;
-  const allLinks = [...primaryLinks, ...manageLinks, ...accountLinks];
-  const sortedLinks = [...allLinks].sort((left, right) => right.href.length - left.href.length);
+  const sortedLinks = [...flatSidebarLinks].sort((left, right) => right.href.length - left.href.length);
   const activePage =
     sortedLinks.find((link) => matchesSidebarPath(pathname, link.href))?.label ??
     (pathname === "/login" ? "Login" : "Dashboard");
@@ -79,24 +78,11 @@ function Topbar() {
                   <p className="text-lg font-semibold">Connect Camp</p>
                   <p className="text-sm text-muted-foreground">Quick navigation</p>
                 </div>
-                <div className="flex flex-col gap-2">
-                  {[...primaryLinks, ...manageLinks, ...accountLinks].map(({ label, href, icon: Icon }: SidebarLink) => (
-                    <SheetClose asChild key={href}>
-                      <NavLink
-                        to={href}
-                        className={({ isActive }) =>
-                          cn(
-                            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                            isActive || matchesSidebarPath(pathname, href)
-                              ? "bg-primary text-primary-foreground"
-                              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                          )
-                        }
-                      >
-                        <Icon className="h-4 w-4" />
-                        {label}
-                      </NavLink>
-                    </SheetClose>
+
+                <div className="space-y-4">
+                  <MobileNavSection title="Workspace" links={[dashboardLink]} pathname={pathname} />
+                  {sidebarGroups.map((group) => (
+                    <MobileNavSection key={group.id} title={group.label} links={group.links} pathname={pathname} />
                   ))}
                 </div>
               </div>
@@ -150,6 +136,42 @@ function Topbar() {
         </div>
       </div>
     </header>
+  );
+}
+
+function MobileNavSection({
+  title,
+  links,
+  pathname,
+}: {
+  title: string;
+  links: SidebarLink[];
+  pathname: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-muted-foreground">{title}</p>
+      <div className="flex flex-col gap-1">
+        {links.map(({ label, href, icon: Icon }) => (
+          <SheetClose asChild key={href}>
+            <NavLink
+              to={href}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  isActive || matchesSidebarPath(pathname, href)
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                )
+              }
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </NavLink>
+          </SheetClose>
+        ))}
+      </div>
+    </div>
   );
 }
 
