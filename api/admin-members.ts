@@ -23,6 +23,24 @@ type RequestBody =
   | {
       action?: "remove-officer";
       userId?: string;
+    }
+  | {
+      action?: "update-user-role";
+      userId?: string;
+      role?: string;
+    }
+  | {
+      action?: "assign-org";
+      userId?: string;
+      orgId?: string | null;
+    }
+  | {
+      action?: "remove-membership";
+      membershipId?: string;
+    }
+  | {
+      action?: "soft-delete-user";
+      userId?: string;
     };
 
 type ActorProfile = {
@@ -94,6 +112,14 @@ export default async function handler(req: any, res: any) {
         return await handleUpsertOfficer(serviceClient, actorProfile, body, res);
       case "remove-officer":
         return await handleRemoveOfficer(serviceClient, actorProfile, body, res);
+      case "update-user-role":
+        return await handleUpdateUserRole(serviceClient, actorProfile, body, res);
+      case "assign-org":
+        return await handleAssignOrg(serviceClient, actorProfile, body, res);
+      case "remove-membership":
+        return await handleRemoveMembership(serviceClient, actorProfile, body, res);
+      case "soft-delete-user":
+        return await handleSoftDeleteUser(serviceClient, actorProfile, body, res);
       default:
         return res.status(400).json({ error: "Unknown action." });
     }
@@ -195,6 +221,100 @@ async function handleRemoveOfficer(serviceClient: ReturnType<typeof createClient
   const { error } = await serviceClient.from("officers").delete().eq("user_id", userId);
   if (error) {
     return res.status(400).json({ error: error.message ?? "Unable to remove officer role." });
+  }
+
+  return res.status(200).json({ ok: true });
+}
+
+async function handleUpdateUserRole(serviceClient: ReturnType<typeof createClient>, actorProfile: ActorProfile, body: Extract<RequestBody, { action?: "update-user-role" }>, res: any) {
+  const userId = body.userId?.trim();
+  const role = body.role?.trim() || null;
+  if (!userId) {
+    return res.status(400).json({ error: "userId is required." });
+  }
+
+  const targetProfile = await getProfileById(serviceClient, userId);
+  if (!targetProfile) {
+    return res.status(404).json({ error: "Target user was not found." });
+  }
+  if (actorProfile.org_id && targetProfile.org_id && actorProfile.org_id !== targetProfile.org_id) {
+    return res.status(403).json({ error: "Target user belongs to a different workspace." });
+  }
+
+  const { error } = await serviceClient.from("profiles").update({ role }).eq("id", userId);
+  if (error) {
+    return res.status(400).json({ error: error.message ?? "Unable to update user role." });
+  }
+
+  return res.status(200).json({ ok: true });
+}
+
+async function handleAssignOrg(serviceClient: ReturnType<typeof createClient>, actorProfile: ActorProfile, body: Extract<RequestBody, { action?: "assign-org" }>, res: any) {
+  const userId = body.userId?.trim();
+  const orgId = body.orgId?.trim() || null;
+  if (!userId) {
+    return res.status(400).json({ error: "userId is required." });
+  }
+
+  if (actorProfile.org_id && orgId && actorProfile.org_id !== orgId) {
+    return res.status(403).json({ error: "You can only assign users into your own workspace." });
+  }
+
+  const { error } = await serviceClient.from("profiles").update({ org_id: orgId }).eq("id", userId);
+  if (error) {
+    return res.status(400).json({ error: error.message ?? "Unable to assign workspace." });
+  }
+
+  return res.status(200).json({ ok: true });
+}
+
+async function handleRemoveMembership(serviceClient: ReturnType<typeof createClient>, actorProfile: ActorProfile, body: Extract<RequestBody, { action?: "remove-membership" }>, res: any) {
+  const membershipId = body.membershipId?.trim();
+  if (!membershipId) {
+    return res.status(400).json({ error: "membershipId is required." });
+  }
+
+  const { data: membership, error: membershipError } = await serviceClient
+    .from("club_members")
+    .select("id, club_id")
+    .eq("id", membershipId)
+    .maybeSingle();
+
+  if (membershipError || !membership) {
+    return res.status(404).json({ error: "Membership not found." });
+  }
+
+  await assertClubAccess(serviceClient, actorProfile, membership.club_id);
+
+  const { error } = await serviceClient.from("club_members").delete().eq("id", membershipId);
+  if (error) {
+    return res.status(400).json({ error: error.message ?? "Unable to remove membership." });
+  }
+
+  return res.status(200).json({ ok: true });
+}
+
+async function handleSoftDeleteUser(serviceClient: ReturnType<typeof createClient>, actorProfile: ActorProfile, body: Extract<RequestBody, { action?: "soft-delete-user" }>, res: any) {
+  const userId = body.userId?.trim();
+  if (!userId) {
+    return res.status(400).json({ error: "userId is required." });
+  }
+
+  const targetProfile = await getProfileById(serviceClient, userId);
+  if (!targetProfile) {
+    return res.status(404).json({ error: "Target user was not found." });
+  }
+  if (actorProfile.org_id && targetProfile.org_id && actorProfile.org_id !== targetProfile.org_id) {
+    return res.status(403).json({ error: "Target user belongs to a different workspace." });
+  }
+
+  const { error } = await serviceClient
+    .from("profiles")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", userId);
+
+  if (error) {
+    return res.status(400).json({ error: error.message ?? "Unable to soft delete user." });
   }
 
   return res.status(200).json({ ok: true });

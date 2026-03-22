@@ -25,11 +25,37 @@ type RemoveOfficerPayload = {
   userId: string;
 };
 
+type UpdateUserRolePayload = {
+  action: "update-user-role";
+  userId: string;
+  role: string;
+};
+
+type AssignOrgPayload = {
+  action: "assign-org";
+  userId: string;
+  orgId: string | null;
+};
+
+type RemoveMembershipPayload = {
+  action: "remove-membership";
+  membershipId: string;
+};
+
+type SoftDeleteUserPayload = {
+  action: "soft-delete-user";
+  userId: string;
+};
+
 type AdminMemberManagementPayload =
   | AddMemberPayload
   | AddOfficerPayload
   | UpsertOfficerPayload
-  | RemoveOfficerPayload;
+  | RemoveOfficerPayload
+  | UpdateUserRolePayload
+  | AssignOrgPayload
+  | RemoveMembershipPayload
+  | SoftDeleteUserPayload;
 
 type ApiErrorShape = {
   error?: string;
