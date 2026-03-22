@@ -166,28 +166,40 @@ function getDateFromKey(key: string) {
 }
 
 async function fetchScopedClubs(orgId: string | null) {
-  const scopedQuery = orgId
-    ? supabase
-        .from("clubs")
-        .select("id,name,created_at,category,approved,is_active,org_id")
-        .eq("org_id", orgId)
-    : supabase.from("clubs").select("id,name,created_at,category,approved,is_active,org_id");
+  const candidateQueries: Array<{ columns: string; scoped: boolean }> = [
+    { columns: "id,name,created_at,category,approved,is_active,org_id", scoped: true },
+    { columns: "id,name,created_at,category,approved,is_active", scoped: false },
+    { columns: "id,name,created_at,approved,is_active", scoped: false },
+    { columns: "id,name,created_at,approved", scoped: false },
+    { columns: "id,name,created_at", scoped: false },
+  ];
 
-  const scopedResult = await scopedQuery;
-  if (!scopedResult.error) {
-    return (scopedResult.data ?? []) as ClubRow[];
+  let lastError: { code?: string; message?: string; details?: string; hint?: string } | null = null;
+
+  for (const candidate of candidateQueries) {
+    let query = supabase.from("clubs").select(candidate.columns);
+    if (orgId && candidate.scoped) {
+      query = query.eq("org_id", orgId);
+    }
+
+    const { data, error } = await query;
+    if (!error) {
+      return ((data ?? []) as unknown[]) as ClubRow[];
+    }
+
+    if (isSchemaError(error) || isAccessError(error)) {
+      lastError = error;
+      continue;
+    }
+
+    throw error;
   }
 
-  if (!orgId || !isSchemaError(scopedResult.error)) {
-    throw scopedResult.error;
+  if (lastError && (isSchemaError(lastError) || isAccessError(lastError))) {
+    return [];
   }
 
-  const fallback = await supabase
-    .from("clubs")
-    .select("id,name,created_at,category,approved,is_active");
-
-  if (fallback.error) throw fallback.error;
-  return (fallback.data ?? []) as ClubRow[];
+  throw lastError ?? new Error("Unable to load clubs for analytics.");
 }
 
 function getWeekStart(date: Date) {
