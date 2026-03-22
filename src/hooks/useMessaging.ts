@@ -55,8 +55,9 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
   }, [selectedConversationId]);
 
   const refreshConversations = useCallback(async () => {
-    if (!userId) {
+    if (!userId || !orgId) {
       setConversations([]);
+      setSelectedConversationId(null);
       return;
     }
 
@@ -105,7 +106,7 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
 
   const markSelectedConversationRead = useCallback(
     async (conversationId: string) => {
-      if (!userId) return;
+      if (!userId || !orgId) return;
 
       await markConversationRead({
         conversationId,
@@ -177,7 +178,7 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
 
   const sendMessage = useCallback(
     async (body: string) => {
-      if (!userId || !selectedConversationId) return;
+      if (!userId || !selectedConversationId || !orgId) return;
 
       const trimmed = body.trim();
       if (!trimmed) return;
@@ -225,7 +226,7 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
 
   const startConversation = useCallback(
     async (targetType: TargetType, targetId: string) => {
-      if (!userId) return null;
+      if (!userId || !orgId) return null;
 
       setCreatingConversation(true);
       try {

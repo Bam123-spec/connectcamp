@@ -54,8 +54,9 @@ export function useAdminMessaging({ userId, profile }: UseAdminMessagingParams) 
   }, [selectedConversationId]);
 
   const refreshConversations = useCallback(async () => {
-    if (!userId) {
+    if (!userId || !orgId) {
       setConversations([]);
+      setSelectedConversationId(null);
       return;
     }
 
@@ -89,7 +90,7 @@ export function useAdminMessaging({ userId, profile }: UseAdminMessagingParams) 
 
   const markSelectedConversationRead = useCallback(
     async (conversationId: string) => {
-      if (!userId) return;
+      if (!userId || !orgId) return;
 
       await markConversationRead({
         conversationId,
@@ -158,7 +159,7 @@ export function useAdminMessaging({ userId, profile }: UseAdminMessagingParams) 
 
   const sendMessage = useCallback(
     async (body: string) => {
-      if (!userId || !selectedConversationId) return;
+      if (!userId || !selectedConversationId || !orgId) return;
 
       const trimmed = body.trim();
       if (!trimmed) return;
@@ -211,7 +212,7 @@ export function useAdminMessaging({ userId, profile }: UseAdminMessagingParams) 
 
   const startConversationWithClub = useCallback(
     async (params: { club: ClubRecipient; campusId?: string | null; subject?: string | null }) => {
-      if (!userId) return null;
+      if (!userId || !orgId) return null;
 
       setCreatingConversation(true);
       try {

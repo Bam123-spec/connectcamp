@@ -470,7 +470,7 @@ function Messaging() {
   }, [newConversationOpen, newConversationTab, orgId, recipientSearch, selectedRecipientKey, toast, userId]);
 
   useEffect(() => {
-    if (!userId || !isAdminWorkspace || autoProvisionedRef.current) return;
+    if (!userId || !orgId || !isAdminWorkspace || autoProvisionedRef.current) return;
 
     autoProvisionedRef.current = true;
     let active = true;
@@ -503,10 +503,10 @@ function Messaging() {
     return () => {
       active = false;
     };
-  }, [isAdminWorkspace, refreshConversations, toast, userId]);
+  }, [isAdminWorkspace, orgId, refreshConversations, toast, userId]);
 
   useEffect(() => {
-    if (!accessDialogOpen || !userId) return;
+    if (!accessDialogOpen || !userId || !orgId) return;
 
     let active = true;
     setDirectoryLoading(true);
@@ -599,6 +599,15 @@ function Messaging() {
   };
 
   const handleSyncClubPaths = async () => {
+    if (!orgId) {
+      toast({
+        variant: "destructive",
+        title: "Workspace context required",
+        description: "This admin account is missing an organization context.",
+      });
+      return;
+    }
+
     setSyncingClubPaths(true);
     try {
       const result = await syncClubMessagingPaths();
@@ -700,6 +709,14 @@ function Messaging() {
   const handleGrantAccessByEmail = async () => {
     const normalized = emailAccess.trim().toLowerCase();
     if (!normalized) return;
+    if (!orgId) {
+      toast({
+        variant: "destructive",
+        title: "Workspace context required",
+        description: "This admin account is missing an organization context.",
+      });
+      return;
+    }
 
     try {
       const user = await findMessagingUserByEmail({

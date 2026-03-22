@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import {
   Dialog,
   DialogContent,
@@ -118,6 +119,7 @@ function Support() {
     () => profile?.email ?? session?.user?.email ?? "",
     [profile?.email, session?.user?.email],
   );
+  const orgId = profile?.org_id ?? null;
 
   const [issueModalOpen, setIssueModalOpen] = useState(false);
   const [ticketForm, setTicketForm] = useState<TicketFormState>(() => initialTicketForm(accountEmail));
@@ -181,22 +183,27 @@ function Support() {
       setLastSyncTime(nowIso);
       window.localStorage.setItem("cc.support.last_sync", nowIso);
 
-      const incidentsQuery = await supabase
-        .from("support_tickets")
-        .select("id, issue_type, priority, status, description, created_at")
-        .in("priority", ["High", "Critical"])
-        .order("created_at", { ascending: false })
-        .limit(8);
+      if (orgId) {
+        const incidentsQuery = await supabase
+          .from("support_tickets")
+          .select("id, issue_type, priority, status, description, created_at")
+          .eq("org_id", orgId)
+          .in("priority", ["High", "Critical"])
+          .order("created_at", { ascending: false })
+          .limit(8);
 
-      if (!incidentsQuery.error) {
-        setIncidentLogs((incidentsQuery.data ?? []) as IncidentLog[]);
+        if (!incidentsQuery.error) {
+          setIncidentLogs((incidentsQuery.data ?? []) as IncidentLog[]);
+        }
+      } else {
+        setIncidentLogs([]);
       }
 
       setLoadingStatus(false);
     };
 
     loadStatus();
-  }, []);
+  }, [orgId]);
 
   const scrollToSection = (target: "status" | "docs" | "feature") => {
     const map = {
@@ -224,6 +231,15 @@ function Support() {
   };
 
   const submitSupportTicket = async () => {
+    if (!orgId) {
+      toast({
+        variant: "destructive",
+        title: "Workspace context required",
+        description: "This admin account is missing an organization context.",
+      });
+      return;
+    }
+
     if (!ticketForm.description.trim()) {
       toast({
         variant: "destructive",
@@ -267,7 +283,7 @@ function Support() {
     const ticketInsert = await supabase
       .from("support_tickets")
       .insert({
-        org_id: null,
+        org_id: orgId,
         campus: ticketForm.campus,
         issue_type: ticketForm.issueType,
         description: ticketForm.description.trim(),
@@ -292,6 +308,21 @@ function Support() {
     }
 
     const ticket = ticketInsert.data as IncidentLog & { id: string };
+    void logAuditEventSafe({
+      orgId,
+      category: "support",
+      action: "support_ticket_created",
+      entityType: "support_ticket",
+      entityId: ticket.id,
+      title: "Support ticket created",
+      summary: `${ticketForm.issueType} ticket was submitted to the support queue.`,
+      metadata: {
+        campus: ticketForm.campus,
+        priority: ticketForm.priority,
+        contact_email: ticketForm.contactEmail || null,
+        screenshot_attached: Boolean(screenshotUrl),
+      },
+    });
 
     const webhookPayload = {
       source: "student-life-admin-support",
@@ -352,6 +383,15 @@ function Support() {
   };
 
   const submitFeatureRequest = async () => {
+    if (!orgId) {
+      toast({
+        variant: "destructive",
+        title: "Workspace context required",
+        description: "This admin account is missing an organization context.",
+      });
+      return;
+    }
+
     if (!featureRequest.trim()) {
       toast({
         variant: "destructive",
@@ -366,7 +406,7 @@ function Support() {
     const insert = await supabase
       .from("support_tickets")
       .insert({
-        org_id: null,
+        org_id: orgId,
         campus: "All",
         issue_type: "Other",
         description: `FEATURE_REQUEST: ${featureRequest.trim()}`,
@@ -391,6 +431,19 @@ function Support() {
       return;
     }
 
+    void logAuditEventSafe({
+      orgId,
+      category: "support",
+      action: "feature_request_created",
+      entityType: "support_ticket",
+      entityId: (insert.data as { id: string } | null)?.id ?? null,
+      title: "Feature request logged",
+      summary: "A new feature request was submitted from the support center.",
+      metadata: {
+        request: featureRequest.trim().slice(0, 240),
+        contact_email: accountEmail || null,
+      },
+    });
     setFeatureRequest("");
     toast({
       title: "Feature request logged",

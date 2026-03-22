@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/lib/utils";
 
@@ -383,18 +384,24 @@ function Clubs() {
         approved: true,
       };
 
+      let targetClubId: string | null = editingClub?.id ?? null;
       let submitError: { message?: string } | null = null;
       if (editingClub) {
-        const { error: updateError } = await supabase
+        const { data, error: updateError } = await supabase
           .from("clubs")
           .update(payload)
           .eq("id", editingClub.id)
-          .eq("org_id", orgId);
+          .eq("org_id", orgId)
+          .select("id")
+          .single();
+        targetClubId = (data as { id: string } | null)?.id ?? editingClub.id;
         submitError = updateError;
       } else {
-        const { error: insertError } = await supabase
+        const { data, error: insertError } = await supabase
           .from("clubs")
-          .insert([{ ...payload, org_id: orgId, created_at: new Date().toISOString() }]);
+          .insert([{ ...payload, org_id: orgId, created_at: new Date().toISOString() }])
+          .select("id");
+        targetClubId = ((data as { id: string }[] | null)?.[0]?.id) ?? null;
         submitError = insertError;
       }
 
@@ -405,6 +412,22 @@ function Clubs() {
       toast({
         title: `Club ${editingClub ? "updated" : "created"}`,
         description: `${payload.name} has been ${editingClub ? "updated" : "added"} to the workspace.`,
+      });
+      void logAuditEventSafe({
+        orgId,
+        category: "clubs",
+        action: editingClub ? "club_updated" : "club_created",
+        entityType: "club",
+        entityId: targetClubId,
+        title: editingClub ? "Club updated" : "Club created",
+        summary: `${payload.name} ${editingClub ? "was updated" : "was added"} in the clubs workspace.`,
+        metadata: {
+          location: payload.location,
+          day: payload.day,
+          time: payload.time,
+          email: payload.email,
+          approved: payload.approved,
+        },
       });
       resetForm();
       setSheetOpen(false);

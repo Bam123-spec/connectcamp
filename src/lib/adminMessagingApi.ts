@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabaseClient";
+import { resolveCurrentOrgId } from "@/lib/organization";
 
 export const MESSAGE_PAGE_SIZE = 30;
-const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 const EPOCH_ISO = "1970-01-01T00:00:00.000Z";
 
 export type MessagingProfile = {
@@ -70,19 +70,8 @@ const normalizeSnippet = (value: string | null | undefined) => {
   return text.length > 72 ? `${text.slice(0, 72)}...` : text;
 };
 
-export function resolveOrgId(profile: MessagingProfile | null): string {
-  const profileOrgId = (profile as MessagingProfile & { org_id?: string | null } | null)?.org_id;
-  if (profileOrgId) return profileOrgId;
-
-  if (typeof window !== "undefined") {
-    const localOrgId =
-      window.localStorage.getItem("cc.workspace.org_id") ||
-      window.localStorage.getItem("cc.settings.org_id");
-
-    if (localOrgId) return localOrgId;
-  }
-
-  return DEFAULT_ORG_ID;
+export function resolveOrgId(profile: MessagingProfile | null): string | null {
+  return resolveCurrentOrgId((profile as MessagingProfile & { org_id?: string | null } | null)?.org_id);
 }
 
 async function fetchProfilesMap(userIds: string[]) {

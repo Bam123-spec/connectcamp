@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { resolveCurrentOrgId } from "@/lib/organization";
 import { supabase } from "@/lib/supabaseClient";
 import { logAuditEventSafe } from "@/lib/auditApi";
 import {
@@ -148,7 +149,7 @@ function Settings() {
   const navigate = useNavigate();
 
   const cached = useMemo(() => readCachedWorkspaceSettings(), []);
-  const orgId = profile?.org_id ?? (typeof window !== "undefined" ? window.localStorage.getItem("cc.settings.org_id") : null);
+  const orgId = resolveCurrentOrgId(profile?.org_id);
 
   const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings>(cached.workspaceSettings);
   const [alertSettings, setAlertSettings] = useState<AlertSettings>(cached.alertSettings);

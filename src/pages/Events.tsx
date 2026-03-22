@@ -301,6 +301,11 @@ function Events() {
     submitEvent.preventDefault();
     setFormError(null);
 
+    if (!profile?.org_id) {
+      setFormError("This admin account is missing an organization context.");
+      return;
+    }
+
     if (!formState.name.trim()) {
       setFormError("Event name is required.");
       return;
@@ -372,6 +377,15 @@ function Events() {
   };
 
   const handleApprovalUpdate = async (eventId: string, approved: boolean | null) => {
+    if (!profile?.org_id) {
+      toast({
+        variant: "destructive",
+        title: "Status update failed",
+        description: "This admin account is missing an organization context.",
+      });
+      return;
+    }
+
     setUpdatingStatusId(eventId);
     const { error: updateError } = await supabase.from("events").update({ approved }).eq("id", eventId);
     setUpdatingStatusId(null);

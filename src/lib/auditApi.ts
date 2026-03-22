@@ -9,7 +9,10 @@ export type AuditCategory =
   | "tasks"
   | "members"
   | "security"
-  | "messaging";
+  | "messaging"
+  | "clubs"
+  | "prospects"
+  | "support";
 
 export type AuditEventRow = {
   id: string;

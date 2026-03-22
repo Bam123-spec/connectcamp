@@ -63,6 +63,11 @@ function CreateEvent() {
     event.preventDefault();
     setError(null);
 
+    if (!orgId) {
+      setError("This admin account is missing an organization context.");
+      return;
+    }
+
     if (!name.trim()) {
       setError("Event name is required.");
       return;

@@ -34,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditEventSafe } from "@/lib/auditApi";
 import {
   addProspectNote,
   convertProspectToClub,
@@ -434,6 +435,20 @@ function Prospects() {
       setCreateOpen(false);
       setCreateForm(initialCreateForm);
       openProspect(created.id);
+      void logAuditEventSafe({
+        orgId,
+        category: "prospects",
+        action: "prospect_created",
+        entityType: "prospect",
+        entityId: created.id,
+        title: "Prospect created",
+        summary: `${created.name} entered the prospect pipeline.`,
+        metadata: {
+          assigned_to: created.assigned_to,
+          contact_email: created.contact_email,
+          origin: created.origin,
+        },
+      });
       toast({ title: "Prospect created", description: "The new prospect has an intake record, checklist, and messaging path." });
     } catch (createError) {
       toast({
@@ -462,6 +477,20 @@ function Prospects() {
         meeting_scheduled_for: selectedProspect.meeting_scheduled_for,
       });
       await loadWorkspace(true);
+      void logAuditEventSafe({
+        orgId,
+        category: "prospects",
+        action: "prospect_updated",
+        entityType: "prospect",
+        entityId: selectedProspect.id,
+        title: "Prospect updated",
+        summary: `${selectedProspect.name} details were updated.`,
+        metadata: {
+          assigned_to: selectedProspect.assigned_to,
+          meeting_scheduled_for: selectedProspect.meeting_scheduled_for,
+          contact_email: selectedProspect.contact_email,
+        },
+      });
       toast({ title: "Prospect updated", description: "Prospect details were saved." });
     } catch (saveError) {
       toast({
@@ -486,6 +515,20 @@ function Prospects() {
       });
       setStatusNote("");
       await loadWorkspace(true);
+      void logAuditEventSafe({
+        orgId,
+        category: "prospects",
+        action: "prospect_status_updated",
+        entityType: "prospect",
+        entityId: selectedProspect.id,
+        title: "Prospect stage updated",
+        summary: `${selectedProspect.name} moved to ${STAGE_META[selectedStage].label}.`,
+        metadata: {
+          status: selectedStage,
+          note: statusNote || null,
+          scheduled_for: selectedStage === "meeting_scheduled" ? selectedProspect.meeting_scheduled_for : null,
+        },
+      });
       toast({ title: "Stage updated", description: `Prospect moved to ${STAGE_META[selectedStage].label}.` });
     } catch (statusError) {
       toast({
@@ -502,9 +545,22 @@ function Prospects() {
     if (!selectedProspect || !noteDraft.trim()) return;
     setActioning("note");
     try {
+      const noteBody = noteDraft.trim();
       await addProspectNote(selectedProspect.id, noteDraft);
       setNoteDraft("");
       await loadWorkspace(true);
+      void logAuditEventSafe({
+        orgId,
+        category: "prospects",
+        action: "prospect_note_added",
+        entityType: "prospect",
+        entityId: selectedProspect.id,
+        title: "Prospect note added",
+        summary: `A note was added to ${selectedProspect.name}.`,
+        metadata: {
+          note_preview: noteBody.slice(0, 160),
+        },
+      });
       toast({ title: "Note added", description: "The note is now part of the prospect history." });
     } catch (noteError) {
       toast({
@@ -541,6 +597,18 @@ function Prospects() {
     try {
       const clubId = await convertProspectToClub(selectedProspect.id);
       await loadWorkspace(true);
+      void logAuditEventSafe({
+        orgId,
+        category: "prospects",
+        action: "prospect_converted",
+        entityType: "prospect",
+        entityId: selectedProspect.id,
+        title: "Prospect converted",
+        summary: `${selectedProspect.name} was converted into an official club.`,
+        metadata: {
+          club_id: clubId,
+        },
+      });
       toast({ title: "Prospect converted", description: "The prospect is now an official club in the workspace." });
       navigate("/clubs");
       window.localStorage.setItem("cc.clubs.highlight", clubId);

@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabaseClient";
+import { resolveCurrentOrgId } from "@/lib/organization";
 
 export const MESSAGE_PAGE_SIZE = 30;
-const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 const EPOCH_ISO = "1970-01-01T00:00:00.000Z";
 const ADMIN_ROLES = ["admin", "student_life_admin", "super_admin"];
 
@@ -191,17 +191,8 @@ function mapDirectoryUser(profile: MessagingProfile & { avatar_url?: string | nu
   };
 }
 
-export function resolveOrgId(profile: MessagingProfile | null): string {
-  if (profile?.org_id) return profile.org_id;
-
-  if (typeof window !== "undefined") {
-    const localOrg =
-      window.localStorage.getItem("cc.workspace.org_id") ||
-      window.localStorage.getItem("cc.settings.org_id");
-    if (localOrg) return localOrg;
-  }
-
-  return DEFAULT_ORG_ID;
+export function resolveOrgId(profile: MessagingProfile | null): string | null {
+  return resolveCurrentOrgId(profile?.org_id);
 }
 
 export async function getMessagingBackend(): Promise<MessagingBackend> {
