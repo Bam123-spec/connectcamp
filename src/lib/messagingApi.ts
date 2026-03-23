@@ -260,6 +260,12 @@ async function parseApiJson(response: Response): Promise<{ error?: string; [key:
   }
 }
 
+function allowLocalMessagingFallback() {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname.toLowerCase();
+  return host === "localhost" || host === "127.0.0.1";
+}
+
 async function fetchUnreadCounts(params: {
   conversationIds: string[];
   userId: string;
@@ -578,7 +584,8 @@ export async function sendConversationMessage(params: {
         conversationId: params.conversationId,
         role: "admin",
       });
-    } catch {
+    } catch (error) {
+      if (!allowLocalMessagingFallback()) throw error;
       await ensureCurrentUserInConversation(
         params.conversationId,
         params.orgId,
@@ -610,7 +617,8 @@ export async function sendConversationMessage(params: {
         conversationId: params.conversationId,
         role: "club",
       });
-    } catch {
+    } catch (error) {
+      if (!allowLocalMessagingFallback()) throw error;
       await ensureCurrentUserInConversation(
         params.conversationId,
         params.orgId,
@@ -733,8 +741,8 @@ export async function getOrCreateConversation(params: {
         clubId: params.targetId,
       });
       if (typeof response?.conversationId === "string") return response.conversationId;
-    } catch {
-      // Fall through to the direct-table fallback for local/dev environments.
+    } catch (error) {
+      if (!allowLocalMessagingFallback()) throw error;
     }
     return fallbackGetOrCreateClubConversation(params);
   }
@@ -746,8 +754,8 @@ export async function getOrCreateConversation(params: {
         prospectId: params.targetId,
       });
       if (typeof response?.conversationId === "string") return response.conversationId;
-    } catch {
-      // Fall through to the direct-table fallback for local/dev environments.
+    } catch (error) {
+      if (!allowLocalMessagingFallback()) throw error;
     }
     return fallbackGetOrCreateProspectConversation(params);
   }
@@ -758,8 +766,8 @@ export async function getOrCreateConversation(params: {
       targetAdminUserId: params.targetId,
     });
     if (typeof response?.conversationId === "string") return response.conversationId;
-  } catch {
-    // Fall through to the direct-table fallback for local/dev environments.
+  } catch (error) {
+    if (!allowLocalMessagingFallback()) throw error;
   }
   return fallbackGetOrCreateAdminConversation(params);
 }
@@ -779,8 +787,8 @@ export async function syncClubMessagingPaths(params: {
       createdCount: Number(response?.createdCount ?? 0),
       connectedCount: Number(response?.connectedCount ?? 0),
     } satisfies ClubMessagingSyncResult;
-  } catch {
-    // Fall through to the direct-table fallback for local/dev environments.
+  } catch (error) {
+    if (!allowLocalMessagingFallback()) throw error;
   }
 
   const clubsResult = await supabase
@@ -889,8 +897,8 @@ export async function addConversationAccess(params: {
       userId: params.userId,
     });
     return;
-  } catch {
-    // Fall through to the direct-table fallback for local/dev environments.
+  } catch (error) {
+    if (!allowLocalMessagingFallback()) throw error;
   }
 
   await addConversationAccessFallback(params);
@@ -907,8 +915,8 @@ export async function removeConversationAccess(params: {
       userId: params.userId,
     });
     return;
-  } catch {
-    // Fall through to the direct-table fallback for local/dev environments.
+  } catch (error) {
+    if (!allowLocalMessagingFallback()) throw error;
   }
 
   await removeConversationAccessFallback(params);
