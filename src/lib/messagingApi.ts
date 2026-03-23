@@ -217,6 +217,49 @@ export async function getMessagingBackend(): Promise<MessagingBackend> {
   return "dedicated";
 }
 
+type MessagingAdminPayload =
+  | { action: "ensure-club-conversation"; clubId: string }
+  | { action: "ensure-prospect-conversation"; prospectId: string }
+  | { action: "ensure-admin-conversation"; targetAdminUserId: string }
+  | { action: "sync-club-conversations" }
+  | { action: "add-conversation-member"; conversationId: string; userId: string }
+  | { action: "remove-conversation-member"; conversationId: string; userId: string }
+  | { action: "ensure-self-member"; conversationId: string; role: MemberType };
+
+async function callMessagingAdminApi(payload: MessagingAdminPayload) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error("You must be signed in to manage messaging.");
+  }
+
+  const response = await fetch("/api/messaging-admin", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await parseApiJson(response);
+  if (!response.ok) {
+    throw new Error(body?.error || "Unable to update messaging state.");
+  }
+
+  return body;
+}
+
+async function parseApiJson(response: Response): Promise<{ error?: string; [key: string]: unknown } | null> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 async function fetchUnreadCounts(params: {
   conversationIds: string[];
   userId: string;
@@ -529,13 +572,21 @@ export async function sendConversationMessage(params: {
   const effectiveClubId = effectiveSenderType === "club" ? senderProfile?.club_id ?? null : null;
 
   if (effectiveSenderType === "admin") {
-    await ensureCurrentUserInConversation(
-      params.conversationId,
-      params.orgId,
-      params.senderId,
-      "admin",
-      null,
-    );
+    try {
+      await callMessagingAdminApi({
+        action: "ensure-self-member",
+        conversationId: params.conversationId,
+        role: "admin",
+      });
+    } catch {
+      await ensureCurrentUserInConversation(
+        params.conversationId,
+        params.orgId,
+        params.senderId,
+        "admin",
+        null,
+      );
+    }
   }
 
   const insertPayload = {
@@ -553,13 +604,21 @@ export async function sendConversationMessage(params: {
     .single();
 
   if (result.error && effectiveSenderType === "club") {
-    await ensureCurrentUserInConversation(
-      params.conversationId,
-      params.orgId,
-      params.senderId,
-      "club",
-      effectiveClubId,
-    );
+    try {
+      await callMessagingAdminApi({
+        action: "ensure-self-member",
+        conversationId: params.conversationId,
+        role: "club",
+      });
+    } catch {
+      await ensureCurrentUserInConversation(
+        params.conversationId,
+        params.orgId,
+        params.senderId,
+        "club",
+        effectiveClubId,
+      );
+    }
 
     result = await supabase
       .from("admin_messages")
@@ -668,13 +727,40 @@ export async function getOrCreateConversation(params: {
   targetId: string;
 }) {
   if (params.targetType === "club") {
+    try {
+      const response = await callMessagingAdminApi({
+        action: "ensure-club-conversation",
+        clubId: params.targetId,
+      });
+      if (typeof response?.conversationId === "string") return response.conversationId;
+    } catch {
+      // Fall through to the direct-table fallback for local/dev environments.
+    }
     return fallbackGetOrCreateClubConversation(params);
   }
 
   if (params.targetType === "prospect") {
+    try {
+      const response = await callMessagingAdminApi({
+        action: "ensure-prospect-conversation",
+        prospectId: params.targetId,
+      });
+      if (typeof response?.conversationId === "string") return response.conversationId;
+    } catch {
+      // Fall through to the direct-table fallback for local/dev environments.
+    }
     return fallbackGetOrCreateProspectConversation(params);
   }
 
+  try {
+    const response = await callMessagingAdminApi({
+      action: "ensure-admin-conversation",
+      targetAdminUserId: params.targetId,
+    });
+    if (typeof response?.conversationId === "string") return response.conversationId;
+  } catch {
+    // Fall through to the direct-table fallback for local/dev environments.
+  }
   return fallbackGetOrCreateAdminConversation(params);
 }
 
@@ -686,6 +772,17 @@ export async function syncClubMessagingPaths(params: {
   orgId: string;
   currentUserId: string;
 }) {
+  try {
+    const response = await callMessagingAdminApi({ action: "sync-club-conversations" });
+    return {
+      clubCount: Number(response?.clubCount ?? 0),
+      createdCount: Number(response?.createdCount ?? 0),
+      connectedCount: Number(response?.connectedCount ?? 0),
+    } satisfies ClubMessagingSyncResult;
+  } catch {
+    // Fall through to the direct-table fallback for local/dev environments.
+  }
+
   const clubsResult = await supabase
     .from("clubs")
     .select("id")
@@ -785,6 +882,17 @@ export async function addConversationAccess(params: {
   conversationId: string;
   userId: string;
 }) {
+  try {
+    await callMessagingAdminApi({
+      action: "add-conversation-member",
+      conversationId: params.conversationId,
+      userId: params.userId,
+    });
+    return;
+  } catch {
+    // Fall through to the direct-table fallback for local/dev environments.
+  }
+
   await addConversationAccessFallback(params);
 }
 
@@ -792,6 +900,17 @@ export async function removeConversationAccess(params: {
   conversationId: string;
   userId: string;
 }) {
+  try {
+    await callMessagingAdminApi({
+      action: "remove-conversation-member",
+      conversationId: params.conversationId,
+      userId: params.userId,
+    });
+    return;
+  } catch {
+    // Fall through to the direct-table fallback for local/dev environments.
+  }
+
   await removeConversationAccessFallback(params);
 }
 
