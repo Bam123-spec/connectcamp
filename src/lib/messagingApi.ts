@@ -198,26 +198,6 @@ function unique<T>(values: T[]) {
   return Array.from(new Set(values));
 }
 
-function isRecoverableRpcError(error: unknown) {
-  if (!error || typeof error !== "object") return false;
-
-  const candidate = error as { code?: string; message?: string; details?: string | null; hint?: string | null };
-  const text = [candidate.code, candidate.message, candidate.details, candidate.hint]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return (
-    text.includes("function") ||
-    text.includes("rpc") ||
-    text.includes("does not exist") ||
-    text.includes("not found") ||
-    text.includes("schema cache") ||
-    text.includes("pgrst") ||
-    text.includes("42883")
-  );
-}
-
 function mapDirectoryUser(profile: MessagingProfile & { avatar_url?: string | null } & { role?: string | null }): MessagingDirectoryUser {
   return {
     id: profile.id,
@@ -647,44 +627,14 @@ export async function getOrCreateConversation(params: {
   targetId: string;
 }) {
   if (params.targetType === "club") {
-    try {
-      const result = await supabase.rpc("ensure_admin_club_conversation", {
-        target_club_id: params.targetId,
-      });
-
-      if (result.error) throw result.error;
-      return result.data as string;
-    } catch (error) {
-      if (!isRecoverableRpcError(error)) throw error;
-      return fallbackGetOrCreateClubConversation(params);
-    }
+    return fallbackGetOrCreateClubConversation(params);
   }
 
   if (params.targetType === "prospect") {
-    try {
-      const result = await supabase.rpc("ensure_prospect_conversation", {
-        target_prospect_id: params.targetId,
-      });
-
-      if (result.error) throw result.error;
-      return result.data as string;
-    } catch (error) {
-      if (!isRecoverableRpcError(error)) throw error;
-      return fallbackGetOrCreateProspectConversation(params);
-    }
+    return fallbackGetOrCreateProspectConversation(params);
   }
 
-  try {
-    const result = await supabase.rpc("ensure_admin_dm_conversation", {
-      target_admin_user_id: params.targetId,
-    });
-
-    if (result.error) throw result.error;
-    return result.data as string;
-  } catch (error) {
-    if (!isRecoverableRpcError(error)) throw error;
-    return fallbackGetOrCreateAdminConversation(params);
-  }
+  return fallbackGetOrCreateAdminConversation(params);
 }
 
 export function resolveSenderType(profile: MessagingProfile | null): MemberType {
@@ -695,60 +645,41 @@ export async function syncClubMessagingPaths(params: {
   orgId: string;
   currentUserId: string;
 }) {
-  try {
-    const result = await supabase.rpc("sync_admin_club_conversations");
-    if (result.error) throw result.error;
+  const clubsResult = await supabase
+    .from("clubs")
+    .select("id")
+    .eq("org_id", params.orgId)
+    .eq("approved", true);
 
-    const payload = (result.data ?? {}) as {
-      club_count?: number;
-      created_count?: number;
-      connected_count?: number;
-    };
+  if (clubsResult.error) throw clubsResult.error;
 
-    return {
-      clubCount: payload.club_count ?? 0,
-      createdCount: payload.created_count ?? 0,
-      connectedCount: payload.connected_count ?? 0,
-    } satisfies ClubMessagingSyncResult;
-  } catch (error) {
-    if (!isRecoverableRpcError(error)) throw error;
+  const clubIds = ((clubsResult.data ?? []) as Array<{ id: string }>).map((row) => row.id);
+  let createdCount = 0;
 
-    const clubsResult = await supabase
-      .from("clubs")
+  for (const clubId of clubIds) {
+    const existingResult = await supabase
+      .from("admin_conversations")
       .select("id")
       .eq("org_id", params.orgId)
-      .eq("approved", true);
+      .eq("club_id", clubId)
+      .limit(1)
+      .maybeSingle();
 
-    if (clubsResult.error) throw clubsResult.error;
+    if (existingResult.error) throw existingResult.error;
+    if (!existingResult.data?.id) createdCount += 1;
 
-    const clubIds = ((clubsResult.data ?? []) as Array<{ id: string }>).map((row) => row.id);
-    let createdCount = 0;
-
-    for (const clubId of clubIds) {
-      const existingResult = await supabase
-        .from("admin_conversations")
-        .select("id")
-        .eq("org_id", params.orgId)
-        .eq("club_id", clubId)
-        .limit(1)
-        .maybeSingle();
-
-      if (existingResult.error) throw existingResult.error;
-      if (!existingResult.data?.id) createdCount += 1;
-
-      await fallbackGetOrCreateClubConversation({
-        orgId: params.orgId,
-        currentUserId: params.currentUserId,
-        targetId: clubId,
-      });
-    }
-
-    return {
-      clubCount: clubIds.length,
-      createdCount,
-      connectedCount: clubIds.length,
-    } satisfies ClubMessagingSyncResult;
+    await fallbackGetOrCreateClubConversation({
+      orgId: params.orgId,
+      currentUserId: params.currentUserId,
+      targetId: clubId,
+    });
   }
+
+  return {
+    clubCount: clubIds.length,
+    createdCount,
+    connectedCount: clubIds.length,
+  } satisfies ClubMessagingSyncResult;
 }
 
 export async function searchMessagingUsers(params: {
@@ -806,76 +737,21 @@ export async function fetchConversationAccessState(params: {
   conversationId: string;
   clubId: string | null;
 }) {
-  try {
-    const result = await supabase.rpc("get_admin_conversation_access_state", {
-      target_conversation_id: params.conversationId,
-    });
-
-    if (result.error) throw result.error;
-
-    const payload = (result.data ?? {}) as {
-      directMembers?: ConversationAccessMember[];
-      suggestedMembers?: ConversationAccessMember[];
-      latestMessageAt?: string | null;
-      latestMessagePreview?: string | null;
-      readSummary?: {
-        totalMembers?: number;
-        adminMembers?: number;
-        clubMembers?: number;
-        seenLatestCount?: number;
-      } | null;
-    };
-
-    return {
-      directMembers: payload.directMembers ?? [],
-      suggestedMembers: payload.suggestedMembers ?? [],
-      latestMessageAt: payload.latestMessageAt ?? null,
-      latestMessagePreview: payload.latestMessagePreview ?? "",
-      readSummary: {
-        totalMembers: payload.readSummary?.totalMembers ?? 0,
-        adminMembers: payload.readSummary?.adminMembers ?? 0,
-        clubMembers: payload.readSummary?.clubMembers ?? 0,
-        seenLatestCount: payload.readSummary?.seenLatestCount ?? 0,
-      },
-    } satisfies ConversationAccessState;
-  } catch (error) {
-    if (!isRecoverableRpcError(error)) throw error;
-    return fetchConversationAccessStateFallback(params);
-  }
+  return fetchConversationAccessStateFallback(params);
 }
 
 export async function addConversationAccess(params: {
   conversationId: string;
   userId: string;
 }) {
-  try {
-    const result = await supabase.rpc("add_admin_conversation_member", {
-      target_conversation_id: params.conversationId,
-      target_user_id: params.userId,
-    });
-
-    if (result.error) throw result.error;
-  } catch (error) {
-    if (!isRecoverableRpcError(error)) throw error;
-    await addConversationAccessFallback(params);
-  }
+  await addConversationAccessFallback(params);
 }
 
 export async function removeConversationAccess(params: {
   conversationId: string;
   userId: string;
 }) {
-  try {
-    const result = await supabase.rpc("remove_admin_conversation_member", {
-      target_conversation_id: params.conversationId,
-      target_user_id: params.userId,
-    });
-
-    if (result.error) throw result.error;
-  } catch (error) {
-    if (!isRecoverableRpcError(error)) throw error;
-    await removeConversationAccessFallback(params);
-  }
+  await removeConversationAccessFallback(params);
 }
 
 async function fetchConversationAccessStateFallback(params: {

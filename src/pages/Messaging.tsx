@@ -233,9 +233,6 @@ function Messaging() {
 
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  const autoProvisionedRef = useRef(false);
-  const isAdminWorkspace =
-    profile?.role === "admin" || profile?.role === "student_life_admin" || profile?.role === "super_admin";
 
   const groupedConversations = useMemo(() => {
     const groups: Record<ConversationCategory, typeof conversations> = {
@@ -471,42 +468,6 @@ function Messaging() {
       window.clearTimeout(timeoutId);
     };
   }, [newConversationOpen, newConversationTab, orgId, recipientSearch, selectedRecipientKey, toast, userId]);
-
-  useEffect(() => {
-    if (!userId || !orgId || !isAdminWorkspace || autoProvisionedRef.current) return;
-
-    autoProvisionedRef.current = true;
-    let active = true;
-    setSyncingClubPaths(true);
-
-    syncClubMessagingPaths({ orgId, currentUserId: userId })
-      .then(async (result) => {
-        if (!active) return;
-        await refreshConversations();
-
-        if (result.createdCount > 0 || result.connectedCount > 0) {
-          toast({
-            title: "Club channels synced",
-            description: `${result.clubCount} clubs checked, ${result.createdCount} channels created, ${result.connectedCount} connected to your inbox.`,
-          });
-        }
-      })
-      .catch((error) => {
-        if (!active) return;
-        toast({
-          variant: "destructive",
-          title: "Could not sync club channels",
-          description: error instanceof Error ? error.message : "Please retry.",
-        });
-      })
-      .finally(() => {
-        if (active) setSyncingClubPaths(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [isAdminWorkspace, orgId, refreshConversations, toast, userId]);
 
   useEffect(() => {
     if (!accessDialogOpen || !userId || !orgId) return;
