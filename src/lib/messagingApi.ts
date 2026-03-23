@@ -515,17 +515,58 @@ export async function sendConversationMessage(params: {
   senderType: MemberType;
   body: string;
 }) {
-  const result = await supabase
+  const senderProfileResult = await supabase
+    .from("profiles")
+    .select("id, role, club_id, org_id")
+    .eq("id", params.senderId)
+    .eq("org_id", params.orgId)
+    .maybeSingle();
+
+  if (senderProfileResult.error) throw senderProfileResult.error;
+
+  const senderProfile = senderProfileResult.data as Pick<ProfileRow, "id" | "role" | "club_id" | "org_id"> | null;
+  const effectiveSenderType: MemberType = senderProfile && isAdminRole(senderProfile.role) ? "admin" : params.senderType;
+  const effectiveClubId = effectiveSenderType === "club" ? senderProfile?.club_id ?? null : null;
+
+  if (effectiveSenderType === "admin") {
+    await ensureCurrentUserInConversation(
+      params.conversationId,
+      params.orgId,
+      params.senderId,
+      "admin",
+      null,
+    );
+  }
+
+  const insertPayload = {
+    conversation_id: params.conversationId,
+    org_id: params.orgId,
+    sender_id: params.senderId,
+    sender_role: effectiveSenderType,
+    body: params.body,
+  };
+
+  let result = await supabase
     .from("admin_messages")
-    .insert({
-      conversation_id: params.conversationId,
-      org_id: params.orgId,
-      sender_id: params.senderId,
-      sender_role: params.senderType,
-      body: params.body,
-    })
+    .insert(insertPayload)
     .select("id, conversation_id, org_id, sender_id, sender_role, body, created_at")
     .single();
+
+  if (result.error && effectiveSenderType === "club") {
+    await ensureCurrentUserInConversation(
+      params.conversationId,
+      params.orgId,
+      params.senderId,
+      "club",
+      effectiveClubId,
+    );
+
+    result = await supabase
+      .from("admin_messages")
+      .insert(insertPayload)
+      .select("id, conversation_id, org_id, sender_id, sender_role, body, created_at")
+      .single();
+  }
 
   if (result.error) throw result.error;
 
