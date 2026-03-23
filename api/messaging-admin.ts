@@ -9,7 +9,8 @@ type RequestBody =
   | { action?: "sync-club-conversations" }
   | { action?: "add-conversation-member"; conversationId?: string; userId?: string }
   | { action?: "remove-conversation-member"; conversationId?: string; userId?: string }
-  | { action?: "ensure-self-member"; conversationId?: string; role?: "admin" | "club" };
+  | { action?: "ensure-self-member"; conversationId?: string; role?: "admin" | "club" }
+  | { action?: "send-message"; conversationId?: string; body?: string };
 
 type ActorProfile = {
   id: string;
@@ -76,6 +77,8 @@ export default async function handler(req: any, res: any) {
         return await handleRemoveConversationMember(serviceClient, actorProfile, body, res);
       case "ensure-self-member":
         return await handleEnsureSelfMember(serviceClient, actorProfile, body, res);
+      case "send-message":
+        return await handleSendMessage(serviceClient, actorProfile, body, res);
       default:
         return res.status(400).json({ error: "Unknown action." });
     }
@@ -428,6 +431,75 @@ async function handleEnsureSelfMember(
   });
 
   return res.status(200).json({ ok: true });
+}
+
+async function handleSendMessage(
+  serviceClient: ReturnType<typeof createClient>,
+  actorProfile: ActorProfile,
+  body: Extract<RequestBody, { action?: "send-message" }>,
+  res: any,
+) {
+  const conversationId = body.conversationId?.trim();
+  const messageBody = body.body?.trim();
+
+  if (!conversationId || !messageBody || !actorProfile.org_id) {
+    return res.status(400).json({ error: "conversationId, body, and actor org are required." });
+  }
+
+  const conversation = await getConversation(serviceClient, conversationId);
+  if (!conversation || conversation.org_id !== actorProfile.org_id) {
+    return res.status(404).json({ error: "Conversation not found in this workspace." });
+  }
+
+  const role: "admin" | "club" = ADMIN_ROLES.has(actorProfile.role ?? "") ? "admin" : "club";
+  const clubId = role === "club" ? actorProfile.club_id ?? conversation.club_id ?? null : null;
+
+  await ensureConversationMember(serviceClient, {
+    conversationId,
+    orgId: actorProfile.org_id,
+    userId: actorProfile.id,
+    role,
+    clubId,
+  });
+
+  const insertResult = await serviceClient
+    .from("admin_messages")
+    .insert({
+      conversation_id: conversationId,
+      org_id: actorProfile.org_id,
+      sender_id: actorProfile.id,
+      sender_role: role,
+      body: messageBody,
+    })
+    .select("id, conversation_id, org_id, sender_id, sender_role, body, created_at")
+    .single();
+
+  if (insertResult.error) {
+    return res.status(400).json({ error: insertResult.error.message ?? "Unable to send message." });
+  }
+
+  const message = insertResult.data as {
+    id: string;
+    conversation_id: string;
+    org_id: string;
+    sender_id: string;
+    sender_role: "admin" | "club";
+    body: string;
+    created_at: string;
+  };
+
+  return res.status(200).json({
+    ok: true,
+    message: {
+      id: message.id,
+      conversationId: message.conversation_id,
+      orgId: message.org_id,
+      senderId: message.sender_id,
+      senderType: message.sender_role,
+      body: message.body,
+      createdAt: message.created_at,
+    },
+  });
 }
 
 async function getActorProfile(serviceClient: ReturnType<typeof createClient>, userId: string) {

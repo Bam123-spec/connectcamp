@@ -224,7 +224,8 @@ type MessagingAdminPayload =
   | { action: "sync-club-conversations" }
   | { action: "add-conversation-member"; conversationId: string; userId: string }
   | { action: "remove-conversation-member"; conversationId: string; userId: string }
-  | { action: "ensure-self-member"; conversationId: string; role: MemberType };
+  | { action: "ensure-self-member"; conversationId: string; role: MemberType }
+  | { action: "send-message"; conversationId: string; body: string };
 
 async function callMessagingAdminApi(payload: MessagingAdminPayload) {
   const {
@@ -564,6 +565,32 @@ export async function sendConversationMessage(params: {
   senderType: MemberType;
   body: string;
 }) {
+  try {
+    const response = await callMessagingAdminApi({
+      action: "send-message",
+      conversationId: params.conversationId,
+      body: params.body,
+    });
+
+    const message = response?.message as
+      | {
+          id: string;
+          conversationId: string;
+          orgId: string;
+          senderId: string;
+          senderType: MemberType;
+          body: string;
+          createdAt: string;
+        }
+      | undefined;
+
+    if (message?.id) {
+      return message satisfies ConversationMessage;
+    }
+  } catch (error) {
+    if (!allowLocalMessagingFallback()) throw error;
+  }
+
   const senderProfileResult = await supabase
     .from("profiles")
     .select("id, role, club_id, org_id")
@@ -577,63 +604,25 @@ export async function sendConversationMessage(params: {
   const effectiveSenderType: MemberType = senderProfile && isAdminRole(senderProfile.role) ? "admin" : params.senderType;
   const effectiveClubId = effectiveSenderType === "club" ? senderProfile?.club_id ?? null : null;
 
-  if (effectiveSenderType === "admin") {
-    try {
-      await callMessagingAdminApi({
-        action: "ensure-self-member",
-        conversationId: params.conversationId,
-        role: "admin",
-      });
-    } catch (error) {
-      if (!allowLocalMessagingFallback()) throw error;
-      await ensureCurrentUserInConversation(
-        params.conversationId,
-        params.orgId,
-        params.senderId,
-        "admin",
-        null,
-      );
-    }
-  }
+  await ensureCurrentUserInConversation(
+    params.conversationId,
+    params.orgId,
+    params.senderId,
+    effectiveSenderType,
+    effectiveSenderType === "club" ? effectiveClubId : null,
+  );
 
-  const insertPayload = {
-    conversation_id: params.conversationId,
-    org_id: params.orgId,
-    sender_id: params.senderId,
-    sender_role: effectiveSenderType,
-    body: params.body,
-  };
-
-  let result = await supabase
+  const result = await supabase
     .from("admin_messages")
-    .insert(insertPayload)
+    .insert({
+      conversation_id: params.conversationId,
+      org_id: params.orgId,
+      sender_id: params.senderId,
+      sender_role: effectiveSenderType,
+      body: params.body,
+    })
     .select("id, conversation_id, org_id, sender_id, sender_role, body, created_at")
     .single();
-
-  if (result.error && effectiveSenderType === "club") {
-    try {
-      await callMessagingAdminApi({
-        action: "ensure-self-member",
-        conversationId: params.conversationId,
-        role: "club",
-      });
-    } catch (error) {
-      if (!allowLocalMessagingFallback()) throw error;
-      await ensureCurrentUserInConversation(
-        params.conversationId,
-        params.orgId,
-        params.senderId,
-        "club",
-        effectiveClubId,
-      );
-    }
-
-    result = await supabase
-      .from("admin_messages")
-      .insert(insertPayload)
-      .select("id, conversation_id, org_id, sender_id, sender_role, body, created_at")
-      .single();
-  }
 
   if (result.error) throw result.error;
 
