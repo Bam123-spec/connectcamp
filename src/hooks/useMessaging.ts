@@ -34,11 +34,13 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
+  const [conversationsError, setConversationsError] = useState<string | null>(null);
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(initialFocusedConversation);
 
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [messagePage, setMessagePage] = useState(0);
@@ -58,10 +60,12 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
     if (!userId || !orgId) {
       setConversations([]);
       setSelectedConversationId(null);
+      setConversationsError(null);
       return;
     }
 
     setConversationsLoading(true);
+    setConversationsError(null);
     try {
       const data = await fetchConversationSummaries({
         userId,
@@ -91,6 +95,8 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
       ) {
         setSelectedConversationId(data[0]?.id ?? null);
       }
+    } catch (error) {
+      setConversationsError(error instanceof Error ? error.message : "Unable to load conversations.");
     } finally {
       setConversationsLoading(false);
     }
@@ -126,35 +132,39 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
     [orgId, userId],
   );
 
-  useEffect(() => {
-    const loadSelectedConversation = async () => {
-      if (!selectedConversationId) {
-        setMessages([]);
-        setHasMoreMessages(false);
-        setMessagePage(0);
-        return;
-      }
-
-      setMessagesLoading(true);
+  const refreshMessages = useCallback(async () => {
+    if (!selectedConversationId) {
+      setMessages([]);
+      setHasMoreMessages(false);
       setMessagePage(0);
+      setMessagesError(null);
+      return;
+    }
 
-      try {
-        const payload = await fetchConversationMessages({
-          conversationId: selectedConversationId,
-          page: 0,
-          pageSize: MESSAGE_PAGE_SIZE,
-        });
+    setMessagesLoading(true);
+    setMessagePage(0);
+    setMessagesError(null);
 
-        setMessages(payload.messages);
-        setHasMoreMessages(payload.hasMore);
-        await markSelectedConversationRead(selectedConversationId);
-      } finally {
-        setMessagesLoading(false);
-      }
-    };
+    try {
+      const payload = await fetchConversationMessages({
+        conversationId: selectedConversationId,
+        page: 0,
+        pageSize: MESSAGE_PAGE_SIZE,
+      });
 
-    loadSelectedConversation();
+      setMessages(payload.messages);
+      setHasMoreMessages(payload.hasMore);
+      await markSelectedConversationRead(selectedConversationId);
+    } catch (error) {
+      setMessagesError(error instanceof Error ? error.message : "Unable to load messages.");
+    } finally {
+      setMessagesLoading(false);
+    }
   }, [markSelectedConversationRead, selectedConversationId]);
+
+  useEffect(() => {
+    void refreshMessages();
+  }, [refreshMessages]);
 
   const loadOlderMessages = useCallback(async () => {
     if (!selectedConversationId || loadingOlderMessages || !hasMoreMessages) return;
@@ -171,6 +181,9 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
       setMessages((prev) => [...payload.messages, ...prev]);
       setHasMoreMessages(payload.hasMore);
       setMessagePage(nextPage);
+      setMessagesError(null);
+    } catch (error) {
+      setMessagesError(error instanceof Error ? error.message : "Unable to load older messages.");
     } finally {
       setLoadingOlderMessages(false);
     }
@@ -361,12 +374,15 @@ export function useMessaging({ userId, profile }: UseMessagingParams) {
     setConversationSearch,
     conversations,
     conversationsLoading,
+    conversationsError,
     refreshConversations,
     selectedConversationId,
     setSelectedConversationId,
     selectedConversation,
     messages,
     messagesLoading,
+    messagesError,
+    refreshMessages,
     loadingOlderMessages,
     hasMoreMessages,
     sendingMessage,

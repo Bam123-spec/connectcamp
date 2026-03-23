@@ -100,6 +100,19 @@ export type ClubMessagingSyncResult = {
   connectedCount: number;
 };
 
+type ConversationRow = {
+  id: string;
+  org_id: string;
+  type: string;
+  club_id: string | null;
+  prospect_id: string | null;
+  subject: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string | null;
+};
+
 type AdminConversationRow = {
   id: string;
   org_id: string;
@@ -158,6 +171,7 @@ type ProspectRow = {
   name: string;
   cover_image_url?: string | null;
   status?: string | null;
+  org_id?: string | null;
 };
 
 const STAGE_TO_SUBTITLE: Record<string, string> = {
@@ -178,6 +192,30 @@ function normalizePreview(value: string | null | undefined) {
 
 function isAdminRole(role: string | null | undefined) {
   return ADMIN_ROLES.includes(role ?? "");
+}
+
+function unique<T>(values: T[]) {
+  return Array.from(new Set(values));
+}
+
+function isRecoverableRpcError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const candidate = error as { code?: string; message?: string; details?: string | null; hint?: string | null };
+  const text = [candidate.code, candidate.message, candidate.details, candidate.hint]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    text.includes("function") ||
+    text.includes("rpc") ||
+    text.includes("does not exist") ||
+    text.includes("not found") ||
+    text.includes("schema cache") ||
+    text.includes("pgrst") ||
+    text.includes("42883")
+  );
 }
 
 function mapDirectoryUser(profile: MessagingProfile & { avatar_url?: string | null } & { role?: string | null }): MessagingDirectoryUser {
@@ -609,50 +647,108 @@ export async function getOrCreateConversation(params: {
   targetId: string;
 }) {
   if (params.targetType === "club") {
-    const result = await supabase.rpc("ensure_admin_club_conversation", {
-      target_club_id: params.targetId,
-    });
+    try {
+      const result = await supabase.rpc("ensure_admin_club_conversation", {
+        target_club_id: params.targetId,
+      });
 
-    if (result.error) throw result.error;
-    return result.data as string;
+      if (result.error) throw result.error;
+      return result.data as string;
+    } catch (error) {
+      if (!isRecoverableRpcError(error)) throw error;
+      return fallbackGetOrCreateClubConversation(params);
+    }
   }
 
   if (params.targetType === "prospect") {
-    const result = await supabase.rpc("ensure_prospect_conversation", {
-      target_prospect_id: params.targetId,
+    try {
+      const result = await supabase.rpc("ensure_prospect_conversation", {
+        target_prospect_id: params.targetId,
+      });
+
+      if (result.error) throw result.error;
+      return result.data as string;
+    } catch (error) {
+      if (!isRecoverableRpcError(error)) throw error;
+      return fallbackGetOrCreateProspectConversation(params);
+    }
+  }
+
+  try {
+    const result = await supabase.rpc("ensure_admin_dm_conversation", {
+      target_admin_user_id: params.targetId,
     });
 
     if (result.error) throw result.error;
     return result.data as string;
+  } catch (error) {
+    if (!isRecoverableRpcError(error)) throw error;
+    return fallbackGetOrCreateAdminConversation(params);
   }
-
-  const result = await supabase.rpc("ensure_admin_dm_conversation", {
-    target_admin_user_id: params.targetId,
-  });
-
-  if (result.error) throw result.error;
-  return result.data as string;
 }
 
 export function resolveSenderType(profile: MessagingProfile | null): MemberType {
   return isAdminRole(profile?.role) ? "admin" : "club";
 }
 
-export async function syncClubMessagingPaths() {
-  const result = await supabase.rpc("sync_admin_club_conversations");
-  if (result.error) throw result.error;
+export async function syncClubMessagingPaths(params: {
+  orgId: string;
+  currentUserId: string;
+}) {
+  try {
+    const result = await supabase.rpc("sync_admin_club_conversations");
+    if (result.error) throw result.error;
 
-  const payload = (result.data ?? {}) as {
-    club_count?: number;
-    created_count?: number;
-    connected_count?: number;
-  };
+    const payload = (result.data ?? {}) as {
+      club_count?: number;
+      created_count?: number;
+      connected_count?: number;
+    };
 
-  return {
-    clubCount: payload.club_count ?? 0,
-    createdCount: payload.created_count ?? 0,
-    connectedCount: payload.connected_count ?? 0,
-  } satisfies ClubMessagingSyncResult;
+    return {
+      clubCount: payload.club_count ?? 0,
+      createdCount: payload.created_count ?? 0,
+      connectedCount: payload.connected_count ?? 0,
+    } satisfies ClubMessagingSyncResult;
+  } catch (error) {
+    if (!isRecoverableRpcError(error)) throw error;
+
+    const clubsResult = await supabase
+      .from("clubs")
+      .select("id")
+      .eq("org_id", params.orgId)
+      .eq("approved", true);
+
+    if (clubsResult.error) throw clubsResult.error;
+
+    const clubIds = ((clubsResult.data ?? []) as Array<{ id: string }>).map((row) => row.id);
+    let createdCount = 0;
+
+    for (const clubId of clubIds) {
+      const existingResult = await supabase
+        .from("admin_conversations")
+        .select("id")
+        .eq("org_id", params.orgId)
+        .eq("club_id", clubId)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingResult.error) throw existingResult.error;
+      if (!existingResult.data?.id) createdCount += 1;
+
+      await fallbackGetOrCreateClubConversation({
+        orgId: params.orgId,
+        currentUserId: params.currentUserId,
+        targetId: clubId,
+      });
+    }
+
+    return {
+      clubCount: clubIds.length,
+      createdCount,
+      connectedCount: clubIds.length,
+    } satisfies ClubMessagingSyncResult;
+  }
 }
 
 export async function searchMessagingUsers(params: {
@@ -710,59 +806,524 @@ export async function fetchConversationAccessState(params: {
   conversationId: string;
   clubId: string | null;
 }) {
-  const result = await supabase.rpc("get_admin_conversation_access_state", {
-    target_conversation_id: params.conversationId,
-  });
+  try {
+    const result = await supabase.rpc("get_admin_conversation_access_state", {
+      target_conversation_id: params.conversationId,
+    });
 
-  if (result.error) throw result.error;
+    if (result.error) throw result.error;
 
-  const payload = (result.data ?? {}) as {
-    directMembers?: ConversationAccessMember[];
-    suggestedMembers?: ConversationAccessMember[];
-    latestMessageAt?: string | null;
-    latestMessagePreview?: string | null;
-    readSummary?: {
-      totalMembers?: number;
-      adminMembers?: number;
-      clubMembers?: number;
-      seenLatestCount?: number;
-    } | null;
-  };
+    const payload = (result.data ?? {}) as {
+      directMembers?: ConversationAccessMember[];
+      suggestedMembers?: ConversationAccessMember[];
+      latestMessageAt?: string | null;
+      latestMessagePreview?: string | null;
+      readSummary?: {
+        totalMembers?: number;
+        adminMembers?: number;
+        clubMembers?: number;
+        seenLatestCount?: number;
+      } | null;
+    };
 
-  return {
-    directMembers: payload.directMembers ?? [],
-    suggestedMembers: payload.suggestedMembers ?? [],
-    latestMessageAt: payload.latestMessageAt ?? null,
-    latestMessagePreview: payload.latestMessagePreview ?? "",
-    readSummary: {
-      totalMembers: payload.readSummary?.totalMembers ?? 0,
-      adminMembers: payload.readSummary?.adminMembers ?? 0,
-      clubMembers: payload.readSummary?.clubMembers ?? 0,
-      seenLatestCount: payload.readSummary?.seenLatestCount ?? 0,
-    },
-  } satisfies ConversationAccessState;
+    return {
+      directMembers: payload.directMembers ?? [],
+      suggestedMembers: payload.suggestedMembers ?? [],
+      latestMessageAt: payload.latestMessageAt ?? null,
+      latestMessagePreview: payload.latestMessagePreview ?? "",
+      readSummary: {
+        totalMembers: payload.readSummary?.totalMembers ?? 0,
+        adminMembers: payload.readSummary?.adminMembers ?? 0,
+        clubMembers: payload.readSummary?.clubMembers ?? 0,
+        seenLatestCount: payload.readSummary?.seenLatestCount ?? 0,
+      },
+    } satisfies ConversationAccessState;
+  } catch (error) {
+    if (!isRecoverableRpcError(error)) throw error;
+    return fetchConversationAccessStateFallback(params);
+  }
 }
 
 export async function addConversationAccess(params: {
   conversationId: string;
   userId: string;
 }) {
-  const result = await supabase.rpc("add_admin_conversation_member", {
-    target_conversation_id: params.conversationId,
-    target_user_id: params.userId,
-  });
+  try {
+    const result = await supabase.rpc("add_admin_conversation_member", {
+      target_conversation_id: params.conversationId,
+      target_user_id: params.userId,
+    });
 
-  if (result.error) throw result.error;
+    if (result.error) throw result.error;
+  } catch (error) {
+    if (!isRecoverableRpcError(error)) throw error;
+    await addConversationAccessFallback(params);
+  }
 }
 
 export async function removeConversationAccess(params: {
   conversationId: string;
   userId: string;
 }) {
-  const result = await supabase.rpc("remove_admin_conversation_member", {
-    target_conversation_id: params.conversationId,
-    target_user_id: params.userId,
-  });
+  try {
+    const result = await supabase.rpc("remove_admin_conversation_member", {
+      target_conversation_id: params.conversationId,
+      target_user_id: params.userId,
+    });
+
+    if (result.error) throw result.error;
+  } catch (error) {
+    if (!isRecoverableRpcError(error)) throw error;
+    await removeConversationAccessFallback(params);
+  }
+}
+
+async function fetchConversationAccessStateFallback(params: {
+  conversationId: string;
+  clubId: string | null;
+}) {
+  const currentUser = await supabase.auth.getUser();
+  const currentUserId = currentUser.data.user?.id ?? null;
+
+  const [conversationResult, membersResult, readsResult, messagesResult] = await Promise.all([
+    supabase
+      .from("admin_conversations")
+      .select("id, org_id, club_id, last_message_at")
+      .eq("id", params.conversationId)
+      .single(),
+    supabase
+      .from("admin_conversation_members")
+      .select("conversation_id, org_id, user_id, role, club_id")
+      .eq("conversation_id", params.conversationId),
+    supabase
+      .from("admin_message_reads")
+      .select("conversation_id, user_id, last_read_at")
+      .eq("conversation_id", params.conversationId),
+    supabase
+      .from("admin_messages")
+      .select("body, created_at")
+      .eq("conversation_id", params.conversationId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
+
+  if (conversationResult.error) throw conversationResult.error;
+  if (membersResult.error) throw membersResult.error;
+  if (readsResult.error) throw readsResult.error;
+  if (messagesResult.error) throw messagesResult.error;
+
+  const conversation = conversationResult.data as Pick<ConversationRow, "id" | "org_id" | "club_id" | "last_message_at">;
+  const members = (membersResult.data ?? []) as AdminConversationMemberRow[];
+  const reads = (readsResult.data ?? []) as Array<{ conversation_id: string; user_id: string; last_read_at: string | null }>;
+  const latestMessage = ((messagesResult.data ?? []) as Array<{ body: string | null; created_at: string }>)[0] ?? null;
+
+  const profileIds = unique(members.map((member) => member.user_id));
+  const [profilesResult, suggestedUsersResult] = await Promise.all([
+    profileIds.length > 0
+      ? supabase.from("profiles").select("id, full_name, email, avatar_url, role, club_id").in("id", profileIds)
+      : Promise.resolve({ data: [] as ProfileRow[], error: null }),
+    conversation.club_id
+      ? supabase
+          .from("profiles")
+          .select("id, full_name, email, avatar_url, role, club_id")
+          .eq("club_id", conversation.club_id)
+      : Promise.resolve({ data: [] as ProfileRow[], error: null }),
+  ]);
+
+  if (profilesResult.error) throw profilesResult.error;
+  if (suggestedUsersResult.error) throw suggestedUsersResult.error;
+
+  const profilesMap = new Map<string, ProfileRow>();
+  ((profilesResult.data ?? []) as ProfileRow[]).forEach((row) => profilesMap.set(row.id, row));
+
+  const readsMap = new Map<string, string | null>();
+  reads.forEach((row) => readsMap.set(row.user_id, row.last_read_at ?? null));
+
+  const latestAt = latestMessage?.created_at ?? conversation.last_message_at ?? null;
+  const directMembers = members
+    .map((member) => {
+      const profile = profilesMap.get(member.user_id);
+      const lastReadAt = readsMap.get(member.user_id) ?? null;
+      const readState: ConversationAccessMember["readState"] =
+        !latestAt ? "no_messages" : !lastReadAt ? "unread" : lastReadAt >= latestAt ? "seen_latest" : "read_earlier";
+
+      return {
+        id: member.user_id,
+        fullName: profile?.full_name ?? null,
+        email: profile?.email ?? null,
+        avatarUrl: profile?.avatar_url ?? null,
+        memberType: member.role,
+        clubId: member.club_id ?? profile?.club_id ?? null,
+        isCurrentUser: member.user_id === currentUserId,
+        isSuggested: false,
+        lastReadAt,
+        readState,
+        tags: [
+          member.role === "admin" ? "Admin" : "Club access",
+          member.club_id || profile?.club_id ? "Club-linked" : null,
+          member.user_id === currentUserId ? "You" : null,
+        ].filter((value): value is string => Boolean(value)),
+      } satisfies ConversationAccessMember;
+    })
+    .sort((a, b) => {
+      if (a.memberType !== b.memberType) return a.memberType === "admin" ? -1 : 1;
+      return (a.fullName ?? a.email ?? a.id).localeCompare(b.fullName ?? b.email ?? b.id);
+    });
+
+  const directMemberIds = new Set(directMembers.map((member) => member.id));
+  const suggestedMembers = ((suggestedUsersResult.data ?? []) as ProfileRow[])
+    .filter((profile) => !directMemberIds.has(profile.id))
+    .map((profile) => ({
+      id: profile.id,
+      fullName: profile.full_name ?? null,
+      email: profile.email ?? null,
+      avatarUrl: profile.avatar_url ?? null,
+      memberType: isAdminRole(profile.role) ? "admin" : "club",
+      clubId: profile.club_id ?? null,
+      isCurrentUser: profile.id === currentUserId,
+      isSuggested: true,
+      lastReadAt: null,
+      readState: "not_added",
+      tags: ["Club-linked"],
+    } satisfies ConversationAccessMember));
+
+  return {
+    directMembers,
+    suggestedMembers,
+    latestMessageAt: latestAt,
+    latestMessagePreview: latestMessage?.body ?? "",
+    readSummary: {
+      totalMembers: directMembers.length,
+      adminMembers: directMembers.filter((member) => member.memberType === "admin").length,
+      clubMembers: directMembers.filter((member) => member.memberType === "club").length,
+      seenLatestCount: directMembers.filter((member) => member.readState === "seen_latest").length,
+    },
+  } satisfies ConversationAccessState;
+}
+
+async function addConversationAccessFallback(params: {
+  conversationId: string;
+  userId: string;
+}) {
+  const [conversationResult, profileResult] = await Promise.all([
+    supabase
+      .from("admin_conversations")
+      .select("id, org_id, club_id")
+      .eq("id", params.conversationId)
+      .single(),
+    supabase
+      .from("profiles")
+      .select("id, role, club_id, org_id")
+      .eq("id", params.userId)
+      .single(),
+  ]);
+
+  if (conversationResult.error) throw conversationResult.error;
+  if (profileResult.error) throw profileResult.error;
+
+  const conversation = conversationResult.data as Pick<ConversationRow, "id" | "org_id" | "club_id">;
+  const profile = profileResult.data as Pick<ProfileRow, "id" | "role" | "club_id" | "org_id">;
+
+  if (profile.org_id !== conversation.org_id) {
+    throw new Error("User not found in this workspace.");
+  }
+
+  const role: MemberType = isAdminRole(profile.role) ? "admin" : "club";
+  const clubId = role === "club" ? profile.club_id ?? conversation.club_id ?? null : null;
+
+  const result = await supabase.from("admin_conversation_members").upsert(
+    {
+      conversation_id: params.conversationId,
+      org_id: conversation.org_id,
+      user_id: params.userId,
+      role,
+      club_id: clubId,
+    },
+    { onConflict: "conversation_id,user_id" },
+  );
 
   if (result.error) throw result.error;
+}
+
+async function removeConversationAccessFallback(params: {
+  conversationId: string;
+  userId: string;
+}) {
+  const membersResult = await supabase
+    .from("admin_conversation_members")
+    .select("user_id, role, org_id")
+    .eq("conversation_id", params.conversationId);
+
+  if (membersResult.error) throw membersResult.error;
+
+  const members = (membersResult.data ?? []) as Array<{ user_id: string; role: MemberType; org_id: string }>;
+  const target = members.find((member) => member.user_id === params.userId) ?? null;
+  if (!target) {
+    throw new Error("Conversation member not found.");
+  }
+
+  if (target.role === "admin" && members.filter((member) => member.role === "admin").length <= 1) {
+    throw new Error("Cannot remove the last admin from this conversation.");
+  }
+
+  const [deleteReadsResult, deleteMembersResult] = await Promise.all([
+    supabase
+      .from("admin_message_reads")
+      .delete()
+      .eq("conversation_id", params.conversationId)
+      .eq("user_id", params.userId),
+    supabase
+      .from("admin_conversation_members")
+      .delete()
+      .eq("conversation_id", params.conversationId)
+      .eq("user_id", params.userId),
+  ]);
+
+  if (deleteReadsResult.error) throw deleteReadsResult.error;
+  if (deleteMembersResult.error) throw deleteMembersResult.error;
+}
+
+async function fallbackGetOrCreateClubConversation(params: {
+  orgId: string;
+  currentUserId: string;
+  targetId: string;
+}) {
+  const existingResult = await supabase
+    .from("admin_conversations")
+    .select("id")
+    .eq("org_id", params.orgId)
+    .eq("club_id", params.targetId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingResult.error) throw existingResult.error;
+  if (existingResult.data?.id) {
+    await ensureCurrentUserInConversation(existingResult.data.id, params.orgId, params.currentUserId, "admin", null);
+    return existingResult.data.id as string;
+  }
+
+  const clubResult = await supabase
+    .from("clubs")
+    .select("id, name, primary_user_id, org_id")
+    .eq("id", params.targetId)
+    .eq("org_id", params.orgId)
+    .single();
+
+  if (clubResult.error) throw clubResult.error;
+
+  const club = clubResult.data as Pick<ClubRow, "id" | "name" | "primary_user_id" | "org_id">;
+  const createResult = await supabase
+    .from("admin_conversations")
+    .insert({
+      org_id: params.orgId,
+      club_id: club.id,
+      type: "club",
+      created_by: params.currentUserId,
+      subject: club.name,
+    })
+    .select("id")
+    .single();
+
+  if (createResult.error) throw createResult.error;
+
+  const conversationId = (createResult.data as { id: string }).id;
+  await ensureCurrentUserInConversation(conversationId, params.orgId, params.currentUserId, "admin", null);
+
+  const [officersResult, clubProfilesResult] = await Promise.all([
+    supabase.from("officers").select("user_id").eq("club_id", club.id).not("user_id", "is", null),
+    supabase.from("profiles").select("id").eq("club_id", club.id),
+  ]);
+
+  if (officersResult.error) throw officersResult.error;
+  if (clubProfilesResult.error) throw clubProfilesResult.error;
+
+  const clubUserIds = unique(
+    [
+      club.primary_user_id ?? null,
+      ...((officersResult.data ?? []) as Array<{ user_id: string | null }>).map((row) => row.user_id),
+      ...((clubProfilesResult.data ?? []) as Array<{ id: string }>).map((row) => row.id),
+    ].filter((value): value is string => Boolean(value)),
+  );
+
+  if (clubUserIds.length > 0) {
+    const insertResult = await supabase.from("admin_conversation_members").upsert(
+      clubUserIds.map((userId) => ({
+        conversation_id: conversationId,
+        org_id: params.orgId,
+        user_id: userId,
+        role: "club" as const,
+        club_id: club.id,
+      })),
+      { onConflict: "conversation_id,user_id" },
+    );
+
+    if (insertResult.error) throw insertResult.error;
+  }
+
+  await markConversationRead({
+    conversationId,
+    orgId: params.orgId,
+    userId: params.currentUserId,
+  });
+
+  return conversationId;
+}
+
+async function fallbackGetOrCreateProspectConversation(params: {
+  orgId: string;
+  currentUserId: string;
+  targetId: string;
+}) {
+  const existingResult = await supabase
+    .from("admin_conversations")
+    .select("id")
+    .eq("org_id", params.orgId)
+    .eq("prospect_id", params.targetId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingResult.error) throw existingResult.error;
+  if (existingResult.data?.id) {
+    await ensureCurrentUserInConversation(existingResult.data.id, params.orgId, params.currentUserId, "admin", null);
+    return existingResult.data.id as string;
+  }
+
+  const prospectResult = await supabase
+    .from("prospect_clubs")
+    .select("id, name, org_id")
+    .eq("id", params.targetId)
+    .eq("org_id", params.orgId)
+    .single();
+
+  if (prospectResult.error) throw prospectResult.error;
+
+  const prospect = prospectResult.data as Pick<ProspectRow, "id" | "name" | "org_id">;
+  const createResult = await supabase
+    .from("admin_conversations")
+    .insert({
+      org_id: params.orgId,
+      prospect_id: prospect.id,
+      type: "prospect",
+      created_by: params.currentUserId,
+      subject: prospect.name,
+    })
+    .select("id")
+    .single();
+
+  if (createResult.error) throw createResult.error;
+
+  const conversationId = (createResult.data as { id: string }).id;
+  await ensureCurrentUserInConversation(conversationId, params.orgId, params.currentUserId, "admin", null);
+  await markConversationRead({
+    conversationId,
+    orgId: params.orgId,
+    userId: params.currentUserId,
+  });
+
+  return conversationId;
+}
+
+async function fallbackGetOrCreateAdminConversation(params: {
+  orgId: string;
+  currentUserId: string;
+  targetId: string;
+}) {
+  const membershipsResult = await supabase
+    .from("admin_conversation_members")
+    .select("conversation_id, user_id")
+    .in("user_id", [params.currentUserId, params.targetId]);
+
+  if (membershipsResult.error) throw membershipsResult.error;
+
+  const memberships = (membershipsResult.data ?? []) as Array<{ conversation_id: string; user_id: string }>;
+  const targetConversationIds = unique(
+    memberships
+      .filter((row) => row.user_id === params.currentUserId)
+      .map((row) => row.conversation_id),
+  ).filter((conversationId) =>
+    memberships.some((row) => row.user_id === params.targetId && row.conversation_id === conversationId),
+  );
+
+  if (targetConversationIds.length > 0) {
+    const conversationResult = await supabase
+      .from("admin_conversations")
+      .select("id")
+      .eq("org_id", params.orgId)
+      .in("id", targetConversationIds)
+      .is("club_id", null)
+      .is("prospect_id", null)
+      .eq("type", "admin")
+      .limit(1)
+      .maybeSingle();
+
+    if (conversationResult.error) throw conversationResult.error;
+    if (conversationResult.data?.id) {
+      return conversationResult.data.id as string;
+    }
+  }
+
+  const createResult = await supabase
+    .from("admin_conversations")
+    .insert({
+      org_id: params.orgId,
+      type: "admin",
+      created_by: params.currentUserId,
+      subject: null,
+    })
+    .select("id")
+    .single();
+
+  if (createResult.error) throw createResult.error;
+
+  const conversationId = (createResult.data as { id: string }).id;
+  const insertMembersResult = await supabase.from("admin_conversation_members").upsert(
+    [
+      {
+        conversation_id: conversationId,
+        org_id: params.orgId,
+        user_id: params.currentUserId,
+        role: "admin" as const,
+        club_id: null,
+      },
+      {
+        conversation_id: conversationId,
+        org_id: params.orgId,
+        user_id: params.targetId,
+        role: "admin" as const,
+        club_id: null,
+      },
+    ],
+    { onConflict: "conversation_id,user_id" },
+  );
+
+  if (insertMembersResult.error) throw insertMembersResult.error;
+
+  await markConversationRead({
+    conversationId,
+    orgId: params.orgId,
+    userId: params.currentUserId,
+  });
+
+  return conversationId;
+}
+
+async function ensureCurrentUserInConversation(
+  conversationId: string,
+  orgId: string,
+  userId: string,
+  role: MemberType,
+  clubId: string | null,
+) {
+  const membershipResult = await supabase.from("admin_conversation_members").upsert(
+    {
+      conversation_id: conversationId,
+      org_id: orgId,
+      user_id: userId,
+      role,
+      club_id: clubId,
+    },
+    { onConflict: "conversation_id,user_id" },
+  );
+
+  if (membershipResult.error) throw membershipResult.error;
 }

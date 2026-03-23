@@ -190,12 +190,15 @@ function Messaging() {
     setConversationSearch,
     conversations,
     conversationsLoading,
+    conversationsError,
     refreshConversations,
     selectedConversationId,
     setSelectedConversationId,
     selectedConversation,
     messages,
     messagesLoading,
+    messagesError,
+    refreshMessages,
     loadingOlderMessages,
     hasMoreMessages,
     sendingMessage,
@@ -476,7 +479,7 @@ function Messaging() {
     let active = true;
     setSyncingClubPaths(true);
 
-    syncClubMessagingPaths()
+    syncClubMessagingPaths({ orgId, currentUserId: userId })
       .then(async (result) => {
         if (!active) return;
         await refreshConversations();
@@ -599,18 +602,18 @@ function Messaging() {
   };
 
   const handleSyncClubPaths = async () => {
-    if (!orgId) {
+    if (!orgId || !userId) {
       toast({
         variant: "destructive",
         title: "Workspace context required",
-        description: "This admin account is missing an organization context.",
+        description: "This admin account is missing either a user session or an organization context.",
       });
       return;
     }
 
     setSyncingClubPaths(true);
     try {
-      const result = await syncClubMessagingPaths();
+      const result = await syncClubMessagingPaths({ orgId, currentUserId: userId });
       await refreshConversations();
       void logAuditEventSafe({
         orgId,
@@ -801,6 +804,46 @@ function Messaging() {
     ? `${seenLatestCount} of ${Math.max(totalMembers, 1)} participants have seen the latest message.`
     : "No messages yet, so there is no read state to show yet.";
 
+  if (!userId) {
+    return (
+      <div className="flex h-[calc(100vh-6rem)] items-center justify-center rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+        <div className="max-w-lg">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] border border-slate-200 bg-slate-50">
+            <Shield className="h-8 w-8 text-slate-400" />
+          </div>
+          <h2 className="mt-6 text-2xl font-semibold tracking-tight text-slate-950">Sign in required</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            Messaging only loads after this workspace has an authenticated user session.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!orgId) {
+    return (
+      <div className="flex h-[calc(100vh-6rem)] items-center justify-center rounded-[28px] border border-amber-200 bg-amber-50 p-8 text-center shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+        <div className="max-w-xl">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] border border-amber-200 bg-white text-amber-700">
+            <AlertTriangle className="h-8 w-8" />
+          </div>
+          <h2 className="mt-6 text-2xl font-semibold tracking-tight text-amber-950">Workspace context is missing</h2>
+          <p className="mt-3 text-sm leading-6 text-amber-900/80">
+            This account does not currently resolve to an organization. Messaging is blocked until the user is attached to the workspace.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Button asChild variant="outline" className="rounded-full border-amber-300 bg-white">
+              <Link to="/users">Open user management</Link>
+            </Button>
+            <Button asChild variant="outline" className="rounded-full border-amber-300 bg-white">
+              <Link to="/settings">Open settings</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-6rem)] overflow-hidden rounded-[28px] border border-slate-200 bg-background shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
       <aside className="flex w-[390px] flex-col border-r border-slate-200 bg-slate-50/80">
@@ -818,6 +861,7 @@ function Messaging() {
               className="h-11 w-11 rounded-2xl bg-slate-950 text-white hover:bg-slate-800"
               onClick={() => openNewConversation("club")}
               aria-label="Start new conversation"
+              disabled={!orgId}
             >
               <Plus className="h-5 w-5" />
             </Button>
@@ -864,7 +908,7 @@ function Messaging() {
               variant="outline"
               className="h-10 flex-1 rounded-2xl border-slate-200 bg-white"
               onClick={handleSyncClubPaths}
-              disabled={syncingClubPaths}
+              disabled={syncingClubPaths || !orgId}
             >
               {syncingClubPaths ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
               Sync club channels
@@ -886,6 +930,14 @@ function Messaging() {
                   </div>
                 </div>
               ))
+            ) : conversationsError ? (
+              <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                <p className="font-semibold text-rose-900">Could not load conversations</p>
+                <p className="mt-1 leading-6">{conversationsError}</p>
+                <Button variant="outline" className="mt-3 rounded-full border-rose-300 bg-white" onClick={() => void refreshConversations()}>
+                  Retry
+                </Button>
+              </div>
             ) : (
               CATEGORY_ORDER.map((group) => {
                 const Icon = group.icon;
@@ -1101,6 +1153,19 @@ function Messaging() {
                       <Skeleton className="h-16 w-2/3 rounded-3xl" />
                     </div>
                   ))}
+                </div>
+              ) : messagesError ? (
+                <div className="flex h-full items-center justify-center px-6 py-10">
+                  <div className="max-w-lg rounded-[28px] border border-rose-200 bg-rose-50 p-6 text-center shadow-sm">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-200 bg-white text-rose-700">
+                      <AlertTriangle className="h-5 w-5" />
+                    </div>
+                    <h4 className="mt-4 text-lg font-semibold text-rose-950">Could not load this conversation</h4>
+                    <p className="mt-2 text-sm leading-6 text-rose-800">{messagesError}</p>
+                    <Button className="mt-4 rounded-full bg-slate-950 text-white hover:bg-slate-800" onClick={() => void refreshMessages()}>
+                      Retry conversation
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div
