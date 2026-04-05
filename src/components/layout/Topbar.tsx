@@ -38,14 +38,10 @@ function Topbar() {
   const sortedLinks = [...flatSidebarLinks].sort((left, right) => right.href.length - left.href.length);
   const activeLink = sortedLinks.find((link) => matchesSidebarPath(pathname, link.href));
   const activePage = activeLink?.label ?? (pathname === "/login" ? "Login" : "Dashboard");
-  const activeGroup =
-    sidebarGroups.find((group) =>
-      group.links.some((link) => matchesSidebarPath(pathname, link.href)),
-    ) ?? null;
 
   const description =
-    activeLink?.description ??
     pageDescriptions[pathname] ??
+    activeLink?.description ??
     "Monitor health of the Connect Camp network.";
 
   const displayName = profile?.full_name || profile?.email || session?.user?.email || "Connect Admin";
@@ -81,23 +77,15 @@ function Topbar() {
               <div className="space-y-4">
                 <div className="space-y-1">
                   <p className="text-lg font-semibold">Connect Camp</p>
-                  <p className="text-sm text-muted-foreground">
-                    Simple navigation grouped by task.
-                  </p>
+                  <p className="text-sm text-muted-foreground">Menu</p>
                 </div>
 
                 <div className="space-y-4">
-                  <MobileNavSection
-                    title="Home"
-                    hint="Start here for the main overview."
-                    links={[dashboardLink]}
-                    pathname={pathname}
-                  />
+                  <MobileNavSection title="Home" links={[dashboardLink]} pathname={pathname} />
                   {sidebarGroups.map((group) => (
                     <MobileNavSection
                       key={group.id}
                       title={group.label}
-                      hint={group.hint}
                       links={group.links}
                       pathname={pathname}
                     />
@@ -108,11 +96,6 @@ function Topbar() {
           </Sheet>
 
           <div>
-            {activeGroup ? (
-              <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[#6f7e6c]">
-                {activeGroup.label}
-              </p>
-            ) : null}
             <p className="text-lg font-semibold">{activePage}</p>
             <p className="text-sm text-muted-foreground">{description}</p>
           </div>
@@ -164,40 +147,32 @@ function Topbar() {
 
 function MobileNavSection({
   title,
-  hint,
   links,
   pathname,
 }: {
   title: string;
-  hint: string;
   links: SidebarLink[];
   pathname: string;
 }) {
   return (
     <div className="space-y-2">
       <p className="px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-muted-foreground">{title}</p>
-      <p className="px-3 text-xs leading-5 text-muted-foreground">{hint}</p>
       <div className="flex flex-col gap-1">
-        {links.map(({ label, href, icon: Icon, description }) => (
+        {links.map(({ label, href, icon: Icon }) => (
           <SheetClose asChild key={href}>
             <NavLink
               to={href}
               className={({ isActive }) =>
                 cn(
-                  "flex items-start gap-3 rounded-2xl px-3 py-3 text-sm transition-colors",
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                   isActive || matchesSidebarPath(pathname, href)
-                    ? "bg-[#edf5e9] text-slate-950"
+                    ? "bg-slate-900 text-white"
                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                 )
               }
             >
-              <div className="mt-0.5 rounded-xl bg-[#eff4eb] p-2 text-[#5d735f]">
-                <Icon className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="font-semibold">{label}</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
-              </div>
+              <Icon className="h-4 w-4" />
+              {label}
             </NavLink>
           </SheetClose>
         ))}
