@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, useLocation, matchPath } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, matchPath, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Clubs from "./pages/Clubs";
@@ -29,6 +29,7 @@ import PublicFormPage from "./pages/public/PublicFormPage";
 import UserManagement from "./pages/UserManagement";
 import PendingApprovals from "./pages/PendingApprovals";
 import AuditLog from "./pages/AuditLog";
+import { useAuth } from "./context/AuthContext";
 
 const SIDEBAR_COMPACT_STORAGE_KEY = "cc.sidebar.compact.default";
 
@@ -48,12 +49,14 @@ function App() {
 }
 
 function AppLayout() {
+  const { session, profile } = useAuth();
   const location = useLocation();
   const isLoginRoute = location.pathname === "/login";
   const isPublicFormRoute = Boolean(
     matchPath("/form-fill/:formId", location.pathname),
   );
-  const showAppChrome = !isLoginRoute && !isPublicFormRoute;
+  const isAuthenticatedAdmin = Boolean(session && profile?.role === "admin");
+  const showAppChrome = !isLoginRoute && !isPublicFormRoute && isAuthenticatedAdmin;
   const [sidebarOpen, setSidebarOpen] = useState(getInitialSidebarOpen);
 
   useEffect(() => {
@@ -279,6 +282,10 @@ function AppLayout() {
                   <AuditLog />
                 </ProtectedRoute>
               }
+            />
+            <Route
+              path="*"
+              element={<Navigate to={isAuthenticatedAdmin ? "/" : "/login"} replace />}
             />
           </Routes>
         </main>
