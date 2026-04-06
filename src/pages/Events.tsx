@@ -459,7 +459,7 @@ function Events() {
   const content = () => {
     if (loading) {
       return (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-4 2xl:grid-cols-2">
           {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={index} className="h-72 rounded-[24px]" />
           ))}
@@ -486,7 +486,7 @@ function Events() {
     }
 
     return (
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 2xl:grid-cols-2">
         {filteredEvents.map((event) => (
           <EventOperationalCard
             key={event.id}
@@ -642,7 +642,7 @@ function Events() {
           </Sheet>
         </div>
 
-        <div className="grid gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           <KpiCard label="Total events" value={summary.total} helper="Programs visible in this workspace" icon={CalendarClock} loading={loading} />
           <KpiCard label="Upcoming" value={summary.upcoming} helper="Scheduled for today or later" icon={CheckCircle2} loading={loading} />
           <KpiCard label="Pending" value={summary.pending} helper="Need approval before publishing" icon={AlertTriangle} loading={loading} />
@@ -652,7 +652,7 @@ function Events() {
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_360px]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,360px)]">
         <div className="space-y-6">
           <Card className="rounded-[28px] border-slate-200 shadow-sm">
             <CardHeader className="gap-4 border-b border-slate-200 pb-5">
@@ -761,11 +761,11 @@ function KpiCard({
   return (
     <div className="bg-white px-5 py-4">
       <div className="flex items-center justify-between gap-3 text-slate-500">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
-        <Icon className="h-4 w-4" />
+        <p className="pr-2 text-xs font-semibold uppercase tracking-[0.16em] sm:tracking-[0.2em]">{label}</p>
+        <Icon className="h-4 w-4 shrink-0" />
       </div>
       {loading ? <Skeleton className="mt-3 h-8 w-16" /> : <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>}
-      <p className="mt-2 text-sm text-slate-500">{helper}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{helper}</p>
     </div>
   );
 }
@@ -795,12 +795,14 @@ function SideListCard({
         ) : (
           items.map((item) => (
             <div key={item.id} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{item.label}</p>
-                  <p className="mt-1 text-sm text-slate-500">{item.helper}</p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-semibold text-slate-950">{item.label}</p>
+                  <p className="mt-1 break-words text-sm text-slate-500">{item.helper}</p>
                 </div>
-                <StatusBadge tone={item.tone} approved />
+                <div className="shrink-0 self-start">
+                  <StatusBadge tone={item.tone} approved />
+                </div>
               </div>
             </div>
           ))
@@ -837,10 +839,10 @@ function EventOperationalCard({
       )}
 
       <div className="space-y-4 px-5 py-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-semibold tracking-tight text-slate-950">{event.name}</h3>
+              <h3 className="break-words text-lg font-semibold tracking-tight text-slate-950">{event.name}</h3>
               <Badge className={cn("rounded-full border-0", event.approved === true ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800")}>
                 {event.approved === true ? "Approved" : "Pending review"}
               </Badge>
@@ -849,7 +851,7 @@ function EventOperationalCard({
             <p className="mt-2 text-sm leading-7 text-slate-600">{compactDescription}</p>
           </div>
 
-          <div className="flex flex-wrap gap-2 xl:justify-end">
+          <div className="flex flex-wrap gap-2 lg:justify-end">
             <Button variant="outline" size="sm" className="rounded-full border-slate-200" onClick={onEdit}>Edit</Button>
             <Button
               variant="outline"
@@ -864,7 +866,7 @@ function EventOperationalCard({
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
           <MetricPill icon={Ticket} label="Registrations" value={String(event.registrationCount)} />
           <MetricPill icon={Building2} label="Owner" value={event.clubName || "Student Life"} />
           <MetricPill icon={CalendarClock} label="Date" value={formatDateLabel(event.date)} />
@@ -872,27 +874,27 @@ function EventOperationalCard({
         </div>
 
         <div className="grid gap-2.5 text-sm text-slate-600 sm:grid-cols-2">
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
-            <CalendarClock className="h-4 w-4 text-slate-400" />
-            <span>{event.time || "Time not set"}</span>
+          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
+            <CalendarClock className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="break-words">{event.time || "Time not set"}</span>
           </div>
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
-            <MapPin className="h-4 w-4 text-slate-400" />
-            <span>{event.location || "Location not set"}</span>
+          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
+            <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
+            <span className="break-words">{event.location || "Location not set"}</span>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
           {event.attentionReasons.length > 0 ? (
             event.attentionReasons.map((reason) => (
-              <Badge key={reason} variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-slate-700">
+              <Badge key={reason} variant="outline" className="rounded-full border-slate-200 bg-slate-50 whitespace-normal text-left text-slate-700">
                 {reason}
               </Badge>
             ))
           ) : (
             <Badge className="rounded-full border-0 bg-emerald-50 text-emerald-700">Operationally healthy</Badge>
           )}
-          <Badge variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-slate-700">
+          <Badge variant="outline" className="rounded-full border-slate-200 bg-slate-50 whitespace-normal text-left text-slate-700">
             Last updated {formatLastUpdated(event.created_at)}
           </Badge>
         </div>
@@ -905,10 +907,10 @@ function MetricPill({ icon: Icon, label, value }: { icon: typeof CalendarClock; 
   return (
     <div className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-3.5 py-3">
       <div className="flex items-center justify-between gap-2 text-slate-500">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
-        <Icon className="h-4 w-4" />
+        <p className="pr-2 text-xs font-semibold uppercase tracking-[0.14em] sm:tracking-[0.18em]">{label}</p>
+        <Icon className="h-4 w-4 shrink-0" />
       </div>
-      <p className="mt-1.5 text-base font-semibold text-slate-950">{value}</p>
+      <p className="mt-1.5 break-words text-base font-semibold text-slate-950">{value}</p>
     </div>
   );
 }
