@@ -134,10 +134,9 @@ export const sidebarGroups: SidebarGroup[] = [
   },
   {
     id: "admin",
-    label: "Administration",
+    label: "Admin",
     hint: "Admin tools",
-    icon: Settings,
-    includeLogout: true,
+    icon: UserCog,
     links: [
       {
         label: "User Management",
@@ -151,6 +150,15 @@ export const sidebarGroups: SidebarGroup[] = [
         icon: BarChart3,
         description: "Reports and trends.",
       },
+    ],
+  },
+  {
+    id: "workspace",
+    label: "Workspace",
+    hint: "Logs, settings, and help",
+    icon: Settings,
+    includeLogout: true,
+    links: [
       {
         label: "Audit Log",
         href: "/audit-log",
@@ -180,10 +188,12 @@ export const flatSidebarLinks: SidebarLink[] = [
 
 export const primaryLinks: SidebarLink[] = [dashboardLink];
 export const manageLinks: SidebarLink[] = sidebarGroups
-  .filter((group) => group.id !== "admin")
+  .filter((group) => !["admin", "workspace"].includes(group.id))
   .flatMap((group) => group.links);
 export const accountLinks: SidebarLink[] =
-  sidebarGroups.find((group) => group.id === "admin")?.links ?? [];
+  sidebarGroups
+    .filter((group) => ["admin", "workspace"].includes(group.id))
+    .flatMap((group) => group.links);
 
 const SECTION_STORAGE_KEY = "cc.sidebar.sections.v1";
 
