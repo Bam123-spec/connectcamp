@@ -832,7 +832,7 @@ function Messaging() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] overflow-hidden rounded-[32px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_44%,#eef4ff_100%)] shadow-[0_22px_70px_rgba(15,23,42,0.12)]">
+    <div className="-mx-4 -mt-4 -mb-10 flex h-[calc(100vh-4rem)] overflow-hidden bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_44%,#eef4ff_100%)] sm:-mx-6 lg:-mx-8">
       <aside className="flex w-[360px] shrink-0 flex-col border-r border-slate-200 bg-white/90 backdrop-blur">
         <div className="border-b border-slate-200 px-5 py-5">
           <div className="flex items-start justify-between gap-4">
