@@ -402,6 +402,7 @@ function Support() {
     }
 
     setSubmittingFeature(true);
+    const trimmedRequest = featureRequest.trim();
 
     const insert = await supabase
       .from("support_tickets")
@@ -409,7 +410,7 @@ function Support() {
         org_id: orgId,
         campus: "All",
         issue_type: "Other",
-        description: `FEATURE_REQUEST: ${featureRequest.trim()}`,
+        description: `FEATURE_REQUEST: ${trimmedRequest}`,
         priority: "Low",
         status: "Open",
         assigned_to: null,
@@ -423,6 +424,7 @@ function Support() {
     setSubmittingFeature(false);
 
     if (insert.error) {
+      setSubmittingFeature(false);
       toast({
         variant: "destructive",
         title: "Request failed",
@@ -431,23 +433,53 @@ function Support() {
       return;
     }
 
+    const insertedTicketId = (insert.data as { id: string } | null)?.id ?? null;
+
     void logAuditEventSafe({
       orgId,
       category: "support",
       action: "feature_request_created",
       entityType: "support_ticket",
-      entityId: (insert.data as { id: string } | null)?.id ?? null,
+      entityId: insertedTicketId,
       title: "Feature request logged",
       summary: "A new feature request was submitted from the support center.",
       metadata: {
-        request: featureRequest.trim().slice(0, 240),
+        request: trimmedRequest.slice(0, 240),
         contact_email: accountEmail || null,
       },
     });
+
+    const edgeResult = await supabase.functions.invoke("support-ticket-notify", {
+      body: {
+        source: "student-life-admin-support",
+        action: "feature_request_created",
+        ticket: {
+          id: insertedTicketId,
+          campus: "All",
+          issue_type: "Feature Request",
+          description: trimmedRequest,
+          priority: "Low",
+          status: "Open",
+          contact_email: accountEmail || null,
+          screenshot_url: null,
+          screenshot_path: null,
+        },
+        recipients: [TECH_LEAD_EMAIL, STUDENT_LIFE_IT_EMAIL],
+      },
+    });
+
+    if (edgeResult.error) {
+      toast({
+        title: "Feature request logged with partial delivery",
+        description: "Saved to the database, but email delivery could not be confirmed.",
+      });
+    }
+
     setFeatureRequest("");
+    setSubmittingFeature(false);
     toast({
       title: "Feature request logged",
-      description: "Thank you. This was added for roadmap review.",
+      description: "Thank you. This was added for roadmap review and sent by email.",
     });
   };
 
