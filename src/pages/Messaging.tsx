@@ -833,9 +833,9 @@ function Messaging() {
 
   return (
     <div className="-mx-4 -mt-4 -mb-10 flex h-[calc(100vh-4rem)] overflow-hidden bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_44%,#eef4ff_100%)] sm:-mx-6 lg:-mx-8">
-      <aside className="flex w-[360px] shrink-0 flex-col border-r border-slate-200 bg-white/90 backdrop-blur">
-        <div className="border-b border-slate-200 px-5 py-5">
-          <div className="flex items-start justify-between gap-4">
+      <aside className="flex w-[380px] shrink-0 flex-col border-r border-slate-200 bg-white/95">
+        <div className="border-b border-slate-200 px-6 py-6">
+          <div className="flex items-start justify-between gap-5">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">Messaging workspace</p>
               <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Inbox</h2>
@@ -854,37 +854,37 @@ function Messaging() {
             </Button>
           </div>
 
-          <div className="relative mt-5">
+          <div className="relative mt-6">
             <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
             <Input
               value={conversationSearch}
               onChange={(event) => setConversationSearch(event.target.value)}
               placeholder="Search by club, admin, or prospect..."
-              className="h-11 rounded-2xl border-slate-200 bg-slate-50 pl-10"
+              className="h-11 rounded-[18px] border-slate-200 bg-slate-50 pl-10"
             />
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Threads</p>
               <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{conversations.length}</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Unread</p>
               <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{unreadConversationCount}</p>
             </div>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+            <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Needs setup</p>
               <p className="mt-2 text-2xl font-semibold tracking-tight text-amber-900">{setupNeededCount}</p>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setActiveInboxFilter("all")}
               className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors",
                 activeInboxFilter === "all"
                   ? "border-slate-950 bg-slate-950 text-white"
                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
@@ -904,7 +904,7 @@ function Messaging() {
                   type="button"
                   onClick={() => setActiveInboxFilter(card.key)}
                   className={cn(
-                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors",
                     active
                       ? "border-slate-950 bg-slate-950 text-white"
                       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
@@ -920,7 +920,7 @@ function Messaging() {
             })}
           </div>
 
-          <div className="mt-4 flex items-center gap-2 rounded-[22px] border border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="mt-5 flex items-start gap-3 rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
             <div className="flex-1">
               <p className="text-sm font-medium text-slate-900">Club channel coverage</p>
               <p className="mt-0.5 text-xs text-slate-500">Sync official club threads into this inbox.</p>
@@ -938,10 +938,10 @@ function Messaging() {
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="space-y-3 p-3">
+          <div className="space-y-2.5 p-4">
             {conversationsLoading ? (
               Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                <div key={index} className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-center gap-3">
                     <Skeleton className="h-11 w-11 rounded-2xl" />
                     <div className="flex-1 space-y-2">
@@ -952,7 +952,7 @@ function Messaging() {
                 </div>
               ))
             ) : conversationsError ? (
-              <div className="rounded-[28px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              <div className="rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
                 <p className="font-semibold text-rose-900">Could not load conversations</p>
                 <p className="mt-1 leading-6">{conversationsError}</p>
                 <Button variant="outline" className="mt-3 rounded-full border-rose-300 bg-white" onClick={() => void refreshConversations()}>
@@ -960,7 +960,7 @@ function Messaging() {
                 </Button>
               </div>
             ) : filteredConversations.length === 0 ? (
-              <div className="rounded-[28px] border border-dashed border-slate-200 bg-white px-5 py-8 text-center shadow-sm">
+              <div className="rounded-[24px] border border-dashed border-slate-200 bg-white px-5 py-8 text-center shadow-sm">
                 <p className="text-sm font-semibold text-slate-900">
                   {activeInboxFilter === "all"
                     ? "No conversations yet."
@@ -982,9 +982,9 @@ function Messaging() {
                     type="button"
                     onClick={() => setSelectedConversationId(conversation.id)}
                     className={cn(
-                      "w-full rounded-[26px] border px-4 py-4 text-left transition-all hover:-translate-y-0.5",
+                      "w-full rounded-[22px] border px-4 py-4 text-left transition-all hover:-translate-y-0.5",
                       active
-                        ? "border-slate-950 bg-slate-950 text-white shadow-[0_20px_45px_rgba(15,23,42,0.22)]"
+                        ? "border-slate-950 bg-slate-950 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)]"
                         : "border-slate-200 bg-white shadow-sm hover:border-slate-300 hover:shadow-md",
                     )}
                   >
@@ -1000,7 +1000,7 @@ function Messaging() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-sm font-semibold">{conversation.title}</p>
+                              <p className="break-words text-sm font-semibold leading-5">{conversation.title}</p>
                               <Badge className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", active ? "border-white/15 bg-white/10 text-white" : meta.summaryTone)}>
                                 {meta.label}
                               </Badge>
@@ -1010,7 +1010,7 @@ function Messaging() {
                                 </Badge>
                               )}
                             </div>
-                            <p className={cn("mt-1 text-xs", active ? "text-slate-300" : "text-slate-500")}>
+                            <p className={cn("mt-1 text-xs leading-5", active ? "text-slate-300" : "text-slate-500")}>
                               {conversation.needsAttention
                                 ? "No club-side account is attached yet."
                                 : conversation.preview}
@@ -1041,8 +1041,8 @@ function Messaging() {
       <main className="flex min-w-0 flex-1 flex-col">
         {!selectedConversation || !selectedMeta ? (
           <div className="flex flex-1 items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.12),_transparent_35%),linear-gradient(180deg,_rgba(255,255,255,0.94),_rgba(248,250,252,0.92))] px-8 py-10">
-            <div className="mx-auto max-w-3xl text-center">
-              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[30px] border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+            <div className="mx-auto max-w-4xl text-center">
+              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
                 <MessageSquare className="h-11 w-11 text-slate-400" />
               </div>
               <h3 className="mt-8 text-3xl font-semibold tracking-tight text-slate-950">Pick a thread and work it like an operator</h3>
@@ -1060,7 +1060,7 @@ function Messaging() {
                       key={group.key}
                       type="button"
                       onClick={() => openNewConversation(tab)}
-                      className="rounded-3xl border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                      className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
                     >
                       <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl border", group.summaryTone)}>
                         <Icon className="h-5 w-5" />
@@ -1075,8 +1075,8 @@ function Messaging() {
           </div>
         ) : (
           <>
-            <div className="border-b border-slate-200 bg-white/78 px-6 py-5 backdrop-blur">
-              <div className="flex items-center gap-4">
+            <div className="border-b border-slate-200 bg-white/82 px-5 py-5 backdrop-blur sm:px-6">
+              <div className="mx-auto flex w-full max-w-4xl flex-wrap items-start gap-4 lg:gap-5">
                 <Avatar className="h-12 w-12 rounded-2xl border border-slate-200">
                   <AvatarImage src={selectedConversation.avatarUrl ?? undefined} />
                   <AvatarFallback className="rounded-2xl bg-slate-100 text-slate-700">
@@ -1098,7 +1098,7 @@ function Messaging() {
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <div className="mt-3 flex flex-wrap items-center gap-2.5">
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
                       {selectedMeta.subtitle}
                     </span>
@@ -1120,10 +1120,10 @@ function Messaging() {
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="ml-auto flex flex-wrap items-center gap-2">
                   <Button
                     variant="outline"
-                    className="rounded-full"
+                    className="rounded-full border-slate-200 bg-white"
                     onClick={() => setDetailsOpen(true)}
                   >
                     <PanelRightOpen className="mr-2 h-4 w-4" />
@@ -1131,7 +1131,7 @@ function Messaging() {
                   </Button>
                   <Button
                     variant="outline"
-                    className="rounded-full"
+                    className="rounded-full border-slate-200 bg-white"
                     onClick={() => setAccessDialogOpen(true)}
                   >
                     <UserPlus className="mr-2 h-4 w-4" />
@@ -1168,11 +1168,11 @@ function Messaging() {
                 <div
                   ref={messagesContainerRef}
                   onScroll={handleMessagesScroll}
-                  className="h-full overflow-y-auto px-6 py-5"
+                  className="h-full overflow-y-auto px-5 py-6 sm:px-6"
                 >
-                  <div className="mx-auto w-full max-w-3xl space-y-5">
+                  <div className="mx-auto w-full max-w-4xl space-y-6">
                     {selectedConversationNeedsAccess && (
-                      <div className="rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-4 text-left shadow-sm">
+                      <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-5 text-left shadow-sm">
                         <div className="flex items-start gap-3">
                           <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-amber-200 bg-white text-amber-700">
                             <AlertTriangle className="h-4 w-4" />
@@ -1225,7 +1225,7 @@ function Messaging() {
                     )}
 
                     {messages.length === 0 && (
-                      <div className="rounded-[28px] border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
+                      <div className="rounded-[24px] border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
                         <p className="text-lg font-semibold text-slate-900">No messages yet</p>
                         <p className="mt-2 text-sm text-slate-500">Send the first message below to open this thread.</p>
                       </div>
@@ -1250,20 +1250,22 @@ function Messaging() {
                           )}
 
                           <div className={cn("flex w-full", mine ? "justify-end" : "justify-start")}>
-                            <div className={cn("flex max-w-[78%] gap-3", mine ? "flex-row-reverse" : "flex-row")}>
-                              <div className={cn("mt-6 h-9 w-9 shrink-0 rounded-2xl border text-xs font-semibold", mine ? "border-slate-200 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700")}>
-                                <div className="flex h-full w-full items-center justify-center">
-                                  {senderName.slice(0, 2).toUpperCase()}
+                            <div className={cn("flex max-w-[min(100%,44rem)] items-end gap-3", mine ? "justify-end" : "justify-start")}>
+                              {!mine && (
+                                <div className="h-9 w-9 shrink-0 rounded-2xl border border-slate-200 bg-white text-xs font-semibold text-slate-700">
+                                  <div className="flex h-full w-full items-center justify-center">
+                                    {senderName.slice(0, 2).toUpperCase()}
+                                  </div>
                                 </div>
-                              </div>
+                              )}
 
-                              <div className="space-y-2">
-                                <div className={cn("px-1 text-[11px] font-medium text-slate-400", mine && "text-right")}>
+                              <div className={cn("space-y-1.5", mine && "text-right")}>
+                                <div className="px-1 text-[11px] font-medium text-slate-400">
                                   {senderName}
                                 </div>
                                 <div
                                   className={cn(
-                                    "rounded-[28px] px-4 py-3 text-sm leading-6 shadow-sm",
+                                    "rounded-[22px] px-4 py-3 text-sm leading-6 shadow-sm",
                                     mine
                                       ? "rounded-br-md bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_100%)] text-white"
                                       : "rounded-bl-md border border-slate-200 bg-white text-slate-800",
@@ -1285,17 +1287,17 @@ function Messaging() {
               )}
             </div>
 
-            <div className="border-t border-slate-200 bg-white/92 px-6 py-4 backdrop-blur">
-              <div className="mx-auto max-w-3xl rounded-[30px] border border-slate-200 bg-white p-3 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+            <div className="border-t border-slate-200 bg-white/92 px-5 py-4 backdrop-blur sm:px-6">
+              <div className="mx-auto max-w-4xl rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
                 <Textarea
                   value={composerValue}
                   onChange={(event) => setComposerValue(event.target.value)}
                   onKeyDown={handleComposerKeyDown}
                   rows={2}
                   placeholder={COMPOSER_PLACEHOLDER[selectedConversation.category]}
-                  className="min-h-[60px] resize-y border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0"
+                  className="min-h-[72px] resize-y border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0"
                 />
-                <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <p className="text-xs font-medium text-slate-600">{COMPOSER_HINT[selectedConversation.category]}</p>
                     <p className="mt-1 text-[11px] text-slate-400">Press Enter to send. Shift+Enter adds a new line.</p>
