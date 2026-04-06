@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { format, formatDistanceToNowStrict, isSameDay } from "date-fns";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -128,6 +128,7 @@ const COMPOSER_PLACEHOLDER: Record<ConversationCategory, string> = {
 };
 
 const ADMIN_ROLES = new Set(["admin", "student_life_admin", "super_admin"]);
+type InboxFilter = "all" | ConversationCategory;
 
 const EMPTY_ACCESS_STATE: ConversationAccessState = {
   directMembers: [],
@@ -179,6 +180,11 @@ function formatReadState(member: ConversationAccessMember) {
   }
 }
 
+function formatConversationTimestamp(value: string | null) {
+  if (!value) return "No activity yet";
+  return formatDistanceToNowStrict(new Date(value), { addSuffix: true });
+}
+
 function Messaging() {
   const { session, profile } = useAuth();
   const { toast } = useToast();
@@ -214,6 +220,7 @@ function Messaging() {
   const [composerValue, setComposerValue] = useState("");
   const [newConversationOpen, setNewConversationOpen] = useState(false);
   const [newConversationTab, setNewConversationTab] = useState<RecipientTab>("club");
+  const [activeInboxFilter, setActiveInboxFilter] = useState<InboxFilter>("all");
   const [recipientSearch, setRecipientSearch] = useState("");
   const [recipientOptions, setRecipientOptions] = useState<RecipientOption[]>([]);
   const [loadingRecipientOptions, setLoadingRecipientOptions] = useState(false);
@@ -259,6 +266,21 @@ function Messaging() {
         ),
       })),
     [groupedConversations],
+  );
+
+  const filteredConversations = useMemo(() => {
+    if (activeInboxFilter === "all") return conversations;
+    return conversations.filter((conversation) => conversation.category === activeInboxFilter);
+  }, [activeInboxFilter, conversations]);
+
+  const unreadConversationCount = useMemo(
+    () => conversations.reduce((total, conversation) => total + conversation.unreadCount, 0),
+    [conversations],
+  );
+
+  const setupNeededCount = useMemo(
+    () => conversations.filter((conversation) => conversation.needsAttention).length,
+    [conversations],
   );
 
   const selectedRecipient = useMemo(
@@ -397,6 +419,13 @@ function Messaging() {
   useEffect(() => {
     setAutoScrollEnabled(true);
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (activeInboxFilter === "all") return;
+    if (selectedConversation && selectedConversation.category !== activeInboxFilter) {
+      setSelectedConversationId(filteredConversations[0]?.id ?? null);
+    }
+  }, [activeInboxFilter, filteredConversations, selectedConversation, setSelectedConversationId]);
 
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -761,9 +790,6 @@ function Messaging() {
   };
 
   const selectedMeta = selectedConversation ? CATEGORY_META[selectedConversation.category] : null;
-  const readHeadline = accessState.latestMessageAt
-    ? `${seenLatestCount} of ${Math.max(totalMembers, 1)} participants have seen the latest message.`
-    : "No messages yet, so there is no read state to show yet.";
 
   if (!userId) {
     return (
@@ -806,20 +832,20 @@ function Messaging() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] overflow-hidden rounded-[28px] border border-slate-200 bg-background shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-      <aside className="flex w-[390px] flex-col border-r border-slate-200 bg-slate-50/80">
-        <div className="border-b border-slate-200 p-5">
+    <div className="flex h-[calc(100vh-6rem)] overflow-hidden rounded-[32px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_44%,#eef4ff_100%)] shadow-[0_22px_70px_rgba(15,23,42,0.12)]">
+      <aside className="flex w-[360px] shrink-0 flex-col border-r border-slate-200 bg-white/90 backdrop-blur">
+        <div className="border-b border-slate-200 px-5 py-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Messaging</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Inbox</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Keep club, admin, and prospect conversations organized in one place.
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">Messaging workspace</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Inbox</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                A cleaner queue for club, admin, and prospect threads.
               </p>
             </div>
             <Button
               size="icon"
-              className="h-11 w-11 rounded-2xl bg-slate-950 text-white hover:bg-slate-800"
+              className="h-11 w-11 rounded-2xl bg-slate-950 text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] hover:bg-slate-800"
               onClick={() => openNewConversation("club")}
               aria-label="Start new conversation"
               disabled={!orgId}
@@ -833,57 +859,91 @@ function Messaging() {
             <Input
               value={conversationSearch}
               onChange={(event) => setConversationSearch(event.target.value)}
-              placeholder="Search conversations..."
-              className="h-11 rounded-2xl border-slate-200 bg-white pl-10"
+              placeholder="Search by club, admin, or prospect..."
+              className="h-11 rounded-2xl border-slate-200 bg-slate-50 pl-10"
             />
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Threads</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{conversations.length}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Unread</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{unreadConversationCount}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Needs setup</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-amber-900">{setupNeededCount}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveInboxFilter("all")}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                activeInboxFilter === "all"
+                  ? "border-slate-950 bg-slate-950 text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+              )}
+            >
+              All
+              <span className={cn("rounded-full px-1.5 py-0.5 text-[10px]", activeInboxFilter === "all" ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500")}>
+                {conversations.length}
+              </span>
+            </button>
             {summaryCards.map((card) => {
               const Icon = card.icon;
+              const active = activeInboxFilter === card.key;
               return (
-                <div
+                <button
                   key={card.key}
+                  type="button"
+                  onClick={() => setActiveInboxFilter(card.key)}
                   className={cn(
-                    "rounded-2xl border px-3 py-3 shadow-sm",
-                    card.summaryTone,
+                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                    active
+                      ? "border-slate-950 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
                   )}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <Icon className="h-4 w-4" />
-                    {card.unread > 0 && (
-                      <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold">
-                        {card.unread > 99 ? "99+" : card.unread}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-3 text-lg font-semibold leading-none">{card.count}</p>
-                  <p className="mt-1 text-[11px] font-medium uppercase tracking-wide opacity-80">{card.summaryText}</p>
-                </div>
+                  <Icon className="h-3.5 w-3.5" />
+                  {card.label}
+                  <span className={cn("rounded-full px-1.5 py-0.5 text-[10px]", active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500")}>
+                    {card.count}
+                  </span>
+                </button>
               );
             })}
           </div>
 
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex items-center gap-2 rounded-[22px] border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-900">Club channel coverage</p>
+              <p className="mt-0.5 text-xs text-slate-500">Sync official club threads into this inbox.</p>
+            </div>
             <Button
               variant="outline"
-              className="h-10 flex-1 rounded-2xl border-slate-200 bg-white"
+              className="rounded-full border-slate-200 bg-white"
               onClick={handleSyncClubPaths}
               disabled={syncingClubPaths || !orgId}
             >
               {syncingClubPaths ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Sync club channels
+              Sync
             </Button>
           </div>
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="space-y-4 p-4">
+          <div className="space-y-3 p-3">
             {conversationsLoading ? (
               Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="rounded-2xl border bg-white p-4 shadow-sm">
+                <div key={index} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-center gap-3">
-                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <Skeleton className="h-11 w-11 rounded-2xl" />
                     <div className="flex-1 space-y-2">
                       <Skeleton className="h-4 w-32" />
                       <Skeleton className="h-3 w-full" />
@@ -892,123 +952,85 @@ function Messaging() {
                 </div>
               ))
             ) : conversationsError ? (
-              <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              <div className="rounded-[28px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
                 <p className="font-semibold text-rose-900">Could not load conversations</p>
                 <p className="mt-1 leading-6">{conversationsError}</p>
                 <Button variant="outline" className="mt-3 rounded-full border-rose-300 bg-white" onClick={() => void refreshConversations()}>
                   Retry
                 </Button>
               </div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="rounded-[28px] border border-dashed border-slate-200 bg-white px-5 py-8 text-center shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">
+                  {activeInboxFilter === "all"
+                    ? "No conversations yet."
+                    : `No ${CATEGORY_META[activeInboxFilter].label.toLowerCase()} match this filter.`}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Start a new thread or switch filters to inspect another part of the inbox.
+                </p>
+              </div>
             ) : (
-              CATEGORY_ORDER.map((group) => {
-                const Icon = group.icon;
-                const items = groupedConversations[group.key];
+              filteredConversations.map((conversation) => {
+                const active = selectedConversationId === conversation.id;
+                const fallback = conversation.title.slice(0, 2).toUpperCase();
+                const meta = CATEGORY_META[conversation.category];
 
                 return (
-                  <section key={group.key} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-                    <div className="border-b border-slate-100 px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <div className={cn("mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border", group.summaryTone)}>
-                            <Icon className="h-4 w-4" />
-                          </div>
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => setSelectedConversationId(conversation.id)}
+                    className={cn(
+                      "w-full rounded-[26px] border px-4 py-4 text-left transition-all hover:-translate-y-0.5",
+                      active
+                        ? "border-slate-950 bg-slate-950 text-white shadow-[0_20px_45px_rgba(15,23,42,0.22)]"
+                        : "border-slate-200 bg-white shadow-sm hover:border-slate-300 hover:shadow-md",
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <Avatar className="h-12 w-12 rounded-2xl border border-transparent">
+                        <AvatarImage src={conversation.avatarUrl ?? undefined} />
+                        <AvatarFallback className={cn(active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700")}>
+                          {fallback}
+                        </AvatarFallback>
+                      </Avatar>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-950">{group.label}</p>
-                            <p className="mt-1 text-xs leading-5 text-slate-500">{group.subtitle}</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-semibold">{conversation.title}</p>
+                              <Badge className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", active ? "border-white/15 bg-white/10 text-white" : meta.summaryTone)}>
+                                {meta.label}
+                              </Badge>
+                              {conversation.needsAttention && (
+                                <Badge className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", active ? "border-amber-300/30 bg-amber-400/10 text-amber-100" : "border-amber-200 bg-amber-50 text-amber-700")}>
+                                  Setup needed
+                                </Badge>
+                              )}
+                            </div>
+                            <p className={cn("mt-1 text-xs", active ? "text-slate-300" : "text-slate-500")}>
+                              {conversation.needsAttention
+                                ? "No club-side account is attached yet."
+                                : conversation.preview}
+                            </p>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <p className={cn("text-[11px]", active ? "text-slate-300" : "text-slate-400")}>
+                              {formatConversationTimestamp(conversation.lastMessageAt)}
+                            </p>
+                            {conversation.unreadCount > 0 && (
+                              <span className={cn("mt-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold", active ? "bg-white text-slate-950" : "bg-slate-950 text-white")}>
+                                {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                              </span>
+                            )}
                           </div>
                         </div>
-                        <Badge variant="secondary" className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600">
-                          {items.length}
-                        </Badge>
                       </div>
                     </div>
-
-                    <div className="space-y-2 p-2">
-                      {items.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-center">
-                          <p className="text-sm font-medium text-slate-600">{group.emptyMessage}</p>
-                          <Button
-                            variant="link"
-                            className="mt-1 h-auto p-0 text-sm text-slate-950"
-                            onClick={() => openNewConversation(group.key === "prospects" ? "prospect" : group.key === "admins" ? "admin" : "club")}
-                          >
-                            {group.newChatCta}
-                          </Button>
-                        </div>
-                      ) : (
-                        items.map((conversation) => {
-                          const active = selectedConversationId === conversation.id;
-                          const fallback = conversation.title.slice(0, 2).toUpperCase();
-
-                          return (
-                            <button
-                              key={conversation.id}
-                              type="button"
-                              onClick={() => setSelectedConversationId(conversation.id)}
-                              className={cn(
-                                "w-full rounded-2xl border px-3 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50",
-                                active
-                                  ? "border-slate-900 bg-slate-900 text-white shadow-[0_10px_30px_rgba(15,23,42,0.18)]"
-                                  : "border-transparent bg-white",
-                              )}
-                            >
-                              <div className="flex items-start gap-3">
-                                <Avatar className="h-11 w-11 rounded-2xl">
-                                  <AvatarImage src={conversation.avatarUrl ?? undefined} />
-                                  <AvatarFallback className={cn(active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700")}>
-                                    {fallback}
-                                  </AvatarFallback>
-                                </Avatar>
-
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <p className="truncate text-sm font-semibold">{conversation.title}</p>
-                                        {conversation.needsAttention && (
-                                          <span className={cn(
-                                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                                            active ? "bg-white/15 text-white" : "bg-amber-100 text-amber-800",
-                                          )}>
-                                            Setup needed
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className={cn("mt-1 text-xs", active ? "text-slate-300" : "text-slate-500")}>
-                                        {conversation.needsAttention
-                                          ? "No club-side member linked yet"
-                                          : CATEGORY_META[conversation.category].summaryText}
-                                      </p>
-                                    </div>
-                                    <div className="shrink-0 text-right">
-                                      <p className={cn("text-[11px]", active ? "text-slate-300" : "text-slate-400")}>
-                                        {conversation.lastMessageAt
-                                          ? formatDistanceToNowStrict(new Date(conversation.lastMessageAt), {
-                                              addSuffix: true,
-                                            })
-                                          : "new"}
-                                      </p>
-                                      {conversation.unreadCount > 0 && (
-                                        <span className={cn(
-                                          "mt-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold",
-                                          active ? "bg-white text-slate-950" : "bg-slate-950 text-white",
-                                        )}>
-                                          {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <p className={cn("mt-3 truncate text-xs", active ? "text-slate-200" : "text-slate-500")}>
-                                    {conversation.preview}
-                                  </p>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </section>
+                  </button>
                 );
               })
             )}
@@ -1016,16 +1038,16 @@ function Messaging() {
         </ScrollArea>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-white">
+      <main className="flex min-w-0 flex-1 flex-col">
         {!selectedConversation || !selectedMeta ? (
-          <div className="flex flex-1 items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_38%),linear-gradient(180deg,_#ffffff,_#f8fafc)] px-8 py-10">
+          <div className="flex flex-1 items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.12),_transparent_35%),linear-gradient(180deg,_rgba(255,255,255,0.94),_rgba(248,250,252,0.92))] px-8 py-10">
             <div className="mx-auto max-w-3xl text-center">
-              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[28px] border border-slate-200 bg-white shadow-sm">
+              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[30px] border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
                 <MessageSquare className="h-11 w-11 text-slate-400" />
               </div>
-              <h3 className="mt-8 text-3xl font-semibold tracking-tight text-slate-950">Messaging should feel operational, not empty</h3>
+              <h3 className="mt-8 text-3xl font-semibold tracking-tight text-slate-950">Pick a thread and work it like an operator</h3>
               <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
-                Select an existing conversation or start a new thread with an official club, another admin, or a prospect club.
+                The inbox is now meant to feel like a clean operations workspace: filter the left rail, open one thread, and keep the details secondary.
               </p>
 
               <div className="mt-8 grid gap-3 sm:grid-cols-3">
@@ -1053,7 +1075,7 @@ function Messaging() {
           </div>
         ) : (
           <>
-            <div className="border-b border-slate-200 bg-white/85 px-6 py-5 backdrop-blur">
+            <div className="border-b border-slate-200 bg-white/78 px-6 py-5 backdrop-blur">
               <div className="flex items-center gap-4">
                 <Avatar className="h-12 w-12 rounded-2xl border border-slate-200">
                   <AvatarImage src={selectedConversation.avatarUrl ?? undefined} />
@@ -1076,12 +1098,26 @@ function Messaging() {
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
-                    <span>{selectedMeta.subtitle}</span>
-                    <span className="text-slate-300">•</span>
-                    <span>{totalMembers} participants</span>
-                    <span className="text-slate-300">•</span>
-                    <span>{readHeadline}</span>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                      {selectedMeta.subtitle}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                      {totalMembers} participants
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                      {seenLatestCount} seen latest
+                    </span>
+                    {selectedConversation.lastMessageAt && (
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                        Active {formatConversationTimestamp(selectedConversation.lastMessageAt)}
+                      </span>
+                    )}
+                    {selectedConversationNeedsAccess && (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                        Club-side access still missing
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1105,7 +1141,7 @@ function Messaging() {
               </div>
             </div>
 
-            <div className="relative flex-1 overflow-hidden bg-[linear-gradient(180deg,_rgba(248,250,252,0.85),_#ffffff)]">
+            <div className="relative flex-1 overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_28%),linear-gradient(180deg,_rgba(248,250,252,0.68),_rgba(255,255,255,0.96))]">
               {messagesLoading ? (
                 <div className="space-y-4 p-6">
                   {Array.from({ length: 6 }).map((_, index) => (
@@ -1134,7 +1170,7 @@ function Messaging() {
                   onScroll={handleMessagesScroll}
                   className="h-full overflow-y-auto px-6 py-5"
                 >
-                  <div className="mx-auto w-full max-w-4xl space-y-5">
+                  <div className="mx-auto w-full max-w-3xl space-y-5">
                     {selectedConversationNeedsAccess && (
                       <div className="rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-4 text-left shadow-sm">
                         <div className="flex items-start gap-3">
@@ -1173,24 +1209,6 @@ function Messaging() {
                       </div>
                     )}
 
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Participants</p>
-                        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{totalMembers}</p>
-                        <p className="mt-1 text-xs text-slate-500">Admins and club-side members currently attached.</p>
-                      </div>
-                      <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Seen latest</p>
-                        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{seenLatestCount}</p>
-                        <p className="mt-1 text-xs text-slate-500">Participants whose read state is at or beyond the latest message.</p>
-                      </div>
-                      <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Club-side readiness</p>
-                        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{clubMembersCount}</p>
-                        <p className="mt-1 text-xs text-slate-500">Club-linked participants who can respond from the other side.</p>
-                      </div>
-                    </div>
-
                     {hasMoreMessages && (
                       <div className="flex justify-center">
                         <Button
@@ -1213,28 +1231,50 @@ function Messaging() {
                       </div>
                     )}
 
-                    {messages.map((message) => {
+                    {messages.map((message, index) => {
                       const mine = message.senderId === userId;
                       const senderName = mine ? "You" : participantMap.get(message.senderId) || selectedConversation.title;
+                      const previousMessage = messages[index - 1];
+                      const showDateDivider =
+                        !previousMessage ||
+                        !isSameDay(new Date(previousMessage.createdAt), new Date(message.createdAt));
 
                       return (
-                        <div key={message.id} className={cn("flex w-full", mine ? "justify-end" : "justify-start")}> 
-                          <div className="max-w-[78%] space-y-2">
-                            <div className={cn("px-1 text-[11px] font-medium text-slate-400", mine && "text-right")}>
-                              {senderName}
+                        <div key={message.id} className="space-y-4">
+                          {showDateDivider && (
+                            <div className="flex justify-center">
+                              <div className="rounded-full border border-slate-200 bg-white/85 px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm backdrop-blur">
+                                {format(new Date(message.createdAt), "EEEE, MMM d")}
+                              </div>
                             </div>
-                            <div
-                              className={cn(
-                                "rounded-[28px] px-4 py-3 text-sm leading-6 shadow-sm",
-                                mine
-                                  ? "rounded-br-md bg-slate-950 text-white"
-                                  : "rounded-bl-md border border-slate-200 bg-white text-slate-800",
-                              )}
-                            >
-                              {message.body}
-                            </div>
-                            <div className={cn("px-1 text-[10px] text-slate-400", mine && "text-right")}>
-                              {format(new Date(message.createdAt), "MMM d, h:mm a")}
+                          )}
+
+                          <div className={cn("flex w-full", mine ? "justify-end" : "justify-start")}>
+                            <div className={cn("flex max-w-[78%] gap-3", mine ? "flex-row-reverse" : "flex-row")}>
+                              <div className={cn("mt-6 h-9 w-9 shrink-0 rounded-2xl border text-xs font-semibold", mine ? "border-slate-200 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700")}>
+                                <div className="flex h-full w-full items-center justify-center">
+                                  {senderName.slice(0, 2).toUpperCase()}
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className={cn("px-1 text-[11px] font-medium text-slate-400", mine && "text-right")}>
+                                  {senderName}
+                                </div>
+                                <div
+                                  className={cn(
+                                    "rounded-[28px] px-4 py-3 text-sm leading-6 shadow-sm",
+                                    mine
+                                      ? "rounded-br-md bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_100%)] text-white"
+                                      : "rounded-bl-md border border-slate-200 bg-white text-slate-800",
+                                  )}
+                                >
+                                  {message.body}
+                                </div>
+                                <div className={cn("px-1 text-[10px] text-slate-400", mine && "text-right")}>
+                                  {format(new Date(message.createdAt), "h:mm a")}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1245,8 +1285,8 @@ function Messaging() {
               )}
             </div>
 
-            <div className="border-t border-slate-200 bg-white px-6 py-4">
-              <div className="mx-auto max-w-4xl rounded-[28px] border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="border-t border-slate-200 bg-white/92 px-6 py-4 backdrop-blur">
+              <div className="mx-auto max-w-3xl rounded-[30px] border border-slate-200 bg-white p-3 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
                 <Textarea
                   value={composerValue}
                   onChange={(event) => setComposerValue(event.target.value)}
@@ -1256,11 +1296,14 @@ function Messaging() {
                   className="min-h-[60px] resize-y border-0 bg-transparent px-2 py-2 shadow-none focus-visible:ring-0"
                 />
                 <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
-                  <p className="text-xs text-slate-500">{COMPOSER_HINT[selectedConversation.category]}</p>
+                  <div>
+                    <p className="text-xs font-medium text-slate-600">{COMPOSER_HINT[selectedConversation.category]}</p>
+                    <p className="mt-1 text-[11px] text-slate-400">Press Enter to send. Shift+Enter adds a new line.</p>
+                  </div>
                   <Button
                     onClick={handleSendMessage}
                     disabled={sendingMessage || !composerValue.trim()}
-                    className="h-11 rounded-full px-5"
+                    className="h-11 rounded-full bg-slate-950 px-5 text-white hover:bg-slate-800"
                   >
                     {sendingMessage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                     Send
