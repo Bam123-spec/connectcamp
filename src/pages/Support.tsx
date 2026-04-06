@@ -61,6 +61,14 @@ type IncidentLog = {
   created_at: string;
 };
 
+type SupportTicketNotifyResult = {
+  delivered: boolean;
+  channels: string[];
+  recipients: string[];
+  warnings: string[];
+  ticket_id: string;
+};
+
 const ISSUE_TYPES: TicketIssueType[] = [
   "App not loading",
   "Events not syncing",
@@ -74,8 +82,6 @@ const CAMPUSES: TicketCampus[] = ["Rockville", "TPSS", "Germantown", "All"];
 const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
 
 const SUPPORT_TEAM_EMAIL = "connectcamp-team@montgomerycollege.edu";
-const TECH_LEAD_EMAIL = "connectcamp-techlead@montgomerycollege.edu";
-const STUDENT_LIFE_IT_EMAIL = "studentlife-it@montgomerycollege.edu";
 const EMERGENCY_CONTACT = "(240) 567-5000";
 
 const DOC_ITEMS = [
@@ -338,7 +344,6 @@ function Support() {
         screenshot_url: screenshotUrl,
         screenshot_path: screenshotPath,
       },
-      recipients: [TECH_LEAD_EMAIL, STUDENT_LIFE_IT_EMAIL],
     };
 
     const edgeResult = await supabase.functions.invoke("support-ticket-notify", {
@@ -368,6 +373,14 @@ function Support() {
         toast({
           title: "Ticket created with partial delivery",
           description: "Saved to database, but webhook/email delivery could not be confirmed.",
+        });
+      }
+    } else {
+      const notifyResult = edgeResult.data as SupportTicketNotifyResult | null;
+      if (notifyResult?.warnings?.length) {
+        toast({
+          title: "Ticket created with partial delivery",
+          description: notifyResult.warnings.join(" "),
         });
       }
     }
@@ -402,7 +415,6 @@ function Support() {
     }
 
     setSubmittingFeature(true);
-    const trimmedRequest = featureRequest.trim();
 
     const insert = await supabase
       .from("support_tickets")
@@ -410,7 +422,7 @@ function Support() {
         org_id: orgId,
         campus: "All",
         issue_type: "Other",
-        description: `FEATURE_REQUEST: ${trimmedRequest}`,
+        description: `FEATURE_REQUEST: ${featureRequest.trim()}`,
         priority: "Low",
         status: "Open",
         assigned_to: null,
@@ -424,7 +436,6 @@ function Support() {
     setSubmittingFeature(false);
 
     if (insert.error) {
-      setSubmittingFeature(false);
       toast({
         variant: "destructive",
         title: "Request failed",
@@ -433,53 +444,51 @@ function Support() {
       return;
     }
 
-    const insertedTicketId = (insert.data as { id: string } | null)?.id ?? null;
+    const featureRequestTicketId = (insert.data as { id: string } | null)?.id ?? null;
+    if (featureRequestTicketId) {
+      const edgeResult = await supabase.functions.invoke("support-ticket-notify", {
+        body: {
+          source: "student-life-admin-support",
+          action: "feature_request_created",
+          ticket: {
+            id: featureRequestTicketId,
+          },
+        },
+      });
+
+      if (edgeResult.error) {
+        toast({
+          title: "Feature request logged with partial delivery",
+          description: "Saved to database, but notification delivery could not be confirmed.",
+        });
+      } else {
+        const notifyResult = edgeResult.data as SupportTicketNotifyResult | null;
+        if (notifyResult?.warnings?.length) {
+          toast({
+            title: "Feature request logged with partial delivery",
+            description: notifyResult.warnings.join(" "),
+          });
+        }
+      }
+    }
 
     void logAuditEventSafe({
       orgId,
       category: "support",
       action: "feature_request_created",
       entityType: "support_ticket",
-      entityId: insertedTicketId,
+      entityId: featureRequestTicketId,
       title: "Feature request logged",
       summary: "A new feature request was submitted from the support center.",
       metadata: {
-        request: trimmedRequest.slice(0, 240),
+        request: featureRequest.trim().slice(0, 240),
         contact_email: accountEmail || null,
       },
     });
-
-    const edgeResult = await supabase.functions.invoke("support-ticket-notify", {
-      body: {
-        source: "student-life-admin-support",
-        action: "feature_request_created",
-        ticket: {
-          id: insertedTicketId,
-          campus: "All",
-          issue_type: "Feature Request",
-          description: trimmedRequest,
-          priority: "Low",
-          status: "Open",
-          contact_email: accountEmail || null,
-          screenshot_url: null,
-          screenshot_path: null,
-        },
-        recipients: [TECH_LEAD_EMAIL, STUDENT_LIFE_IT_EMAIL],
-      },
-    });
-
-    if (edgeResult.error) {
-      toast({
-        title: "Feature request logged with partial delivery",
-        description: "Saved to the database, but email delivery could not be confirmed.",
-      });
-    }
-
     setFeatureRequest("");
-    setSubmittingFeature(false);
     toast({
       title: "Feature request logged",
-      description: "Thank you. This was added for roadmap review and sent by email.",
+      description: "Thank you. This was added for roadmap review.",
     });
   };
 
@@ -694,10 +703,10 @@ function Support() {
           <div className="space-y-2 rounded-lg border bg-card/70 p-4">
             <p className="text-sm font-semibold">Urgent contacts</p>
             <p className="text-sm text-muted-foreground">
-              Connect Camp Technical Lead: {TECH_LEAD_EMAIL}
+              Support queue: {SUPPORT_TEAM_EMAIL}
             </p>
             <p className="text-sm text-muted-foreground">
-              Student Life IT: {STUDENT_LIFE_IT_EMAIL}
+              Workspace support inbox receives submitted tickets and feature requests.
             </p>
             <p className="text-sm text-muted-foreground">
               Emergency campus contact: {EMERGENCY_CONTACT}

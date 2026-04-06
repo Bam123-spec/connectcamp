@@ -1,0 +1,2 @@
+[functions.support-ticket-notify]
+verify_jwt = false
