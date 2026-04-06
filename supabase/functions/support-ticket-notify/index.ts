@@ -308,7 +308,7 @@ Deno.serve(async (req) => {
           name: requesterName,
         },
         subject: `[Connect Camp][${ticket.priority}] ${ticket.issue_type} (${ticket.id.slice(0, 8)})`,
-        html: buildEmailHtml({
+        htmlContent: buildEmailHtml({
           workspaceName,
           ticket,
           requesterName,
