@@ -1,215 +1,161 @@
 import { useMemo } from "react";
-import { CalendarRange, Clock3, Sparkles, TrendingUp } from "lucide-react";
+import { CalendarClock, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionCard } from "@/components/dashboard/SectionCard";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type { EventDayStat } from "@/lib/supabaseDashboardApi";
-import { cn } from "@/lib/utils";
 
 interface MostActiveDaysChartProps {
   data: EventDayStat[];
   loading?: boolean;
 }
 
-const DAY_SHORT: Record<string, string> = {
-  Monday: "Mon",
-  Tuesday: "Tue",
-  Wednesday: "Wed",
-  Thursday: "Thu",
-  Friday: "Fri",
-  Saturday: "Sat",
-  Sunday: "Sun",
-};
-
-const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
 export function MostActiveDaysChart({ data, loading }: MostActiveDaysChartProps) {
   const summary = useMemo(() => {
-    const normalized = DAY_ORDER.map((day) => ({
-      label: day,
-      value: data.find((item) => item.label === day)?.value ?? 0,
-    }));
+    const total = data.reduce((sum, item) => sum + item.value, 0);
+    const lead = data[0] ?? null;
+    const second = data[1] ?? null;
+    const leadShare = lead && total > 0 ? Math.round((lead.value / total) * 100) : 0;
 
-    const total = normalized.reduce((sum, item) => sum + item.value, 0);
-    const ranked = normalized
-      .filter((item) => item.value > 0)
-      .sort((left, right) => right.value - left.value || DAY_ORDER.indexOf(left.label) - DAY_ORDER.indexOf(right.label));
-
-    const topDay = ranked[0] ?? null;
-    const secondDay = ranked[1] ?? null;
-    const highestValue = topDay?.value ?? 0;
-    const activeDays = ranked.length;
-    const weekendTotal = normalized
-      .filter((item) => item.label === "Saturday" || item.label === "Sunday")
-      .reduce((sum, item) => sum + item.value, 0);
-    const weekendShare = total > 0 ? Math.round((weekendTotal / total) * 100) : 0;
-    const topDayShare = total > 0 && topDay ? Math.round((topDay.value / total) * 100) : 0;
-
-    let planningNote = "No scheduled events yet. Once events are added, this card will show where the week is clustering.";
-    if (topDay && secondDay) {
-      planningNote = `${topDay.label} leads the calendar, with ${secondDay.label} close behind. Keep staffing, approvals, and support coverage strongest around those windows.`;
-    } else if (topDay) {
-      planningNote = `${topDay.label} currently carries the schedule. If more events are added, watch whether activity starts spreading across the week.`;
+    let note = "No event activity has been scheduled yet.";
+    if (lead && second) {
+      note = `${lead.label} is currently the busiest day, with ${second.label} close behind. That is where staffing and approvals are most likely to bunch up.`;
+    } else if (lead) {
+      note = `${lead.label} is currently carrying the schedule load.`;
     }
 
-    return {
-      normalized,
-      ranked,
-      total,
-      topDay,
-      secondDay,
-      highestValue,
-      activeDays,
-      weekendShare,
-      topDayShare,
-      planningNote,
-    };
+    return { total, lead, second, leadShare, note };
   }, [data]);
 
   if (loading) {
-    return <Skeleton className="h-[420px] w-full rounded-xl" />;
+    return <Skeleton className="h-[400px] w-full rounded-xl" />;
   }
 
   return (
     <SectionCard
       title="Most Active Days"
-      subtitle="Weekly event rhythm with planning cues"
+      subtitle="Event distribution by day"
       className="h-full"
       action={
-        summary.topDay ? (
+        summary.lead ? (
           <div className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-            Peak: {summary.topDay.label}
+            {summary.lead.label} leads
           </div>
         ) : null
       }
     >
       <div className="space-y-5">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <InsightTile
-            icon={TrendingUp}
-            label="Peak day"
-            value={summary.topDay?.label ?? "None yet"}
-            helper={summary.topDay ? `${summary.topDayShare}% of scheduled events` : "Waiting on event data"}
-            tone="blue"
-          />
-          <InsightTile
-            icon={CalendarRange}
-            label="Active days"
-            value={`${summary.activeDays}/7`}
-            helper={summary.total > 0 ? `${summary.total} scheduled event${summary.total === 1 ? "" : "s"}` : "No events scheduled"}
-            tone="slate"
-          />
-          <InsightTile
-            icon={Clock3}
-            label="Weekend share"
-            value={`${summary.weekendShare}%`}
-            helper={summary.weekendShare > 0 ? "Saturday and Sunday activity" : "No weekend-heavy pattern"}
-            tone="violet"
-          />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Top day
+              </p>
+              <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                <CalendarClock className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
+              {summary.lead?.label ?? "No data yet"}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {summary.lead ? `${summary.lead.value} events · ${summary.leadShare}% of visible activity` : "Schedule events to reveal activity patterns."}
+            </p>
+          </div>
+
+          <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Weekly load
+              </p>
+              <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-violet-50 text-violet-700">
+                <Sparkles className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
+              {summary.total}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Total events represented across the busiest days in the current view.
+            </p>
+          </div>
         </div>
 
-        {summary.ranked.length === 0 ? (
+        {data.length === 0 ? (
           <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-center">
             <p className="text-sm font-semibold text-slate-900">No event pattern yet</p>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              As events are scheduled, this panel will show which days are carrying the heaviest load.
+              As events are scheduled, this chart will show which weekdays carry the most activity.
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {summary.ranked.map((item, index) => {
-              const share = summary.total > 0 ? Math.round((item.value / summary.total) * 100) : 0;
-              const width = summary.highestValue > 0 ? Math.max((item.value / summary.highestValue) * 100, 10) : 0;
-              const isLead = index === 0;
-
-              return (
-                <div key={item.label} className="rounded-[22px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <div
-                        className={cn(
-                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-sm font-semibold",
-                          isLead ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600",
-                        )}
-                      >
-                        {index + 1}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-950">{item.label}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {DAY_SHORT[item.label]} schedule load · {share}% of all events
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="shrink-0 text-right">
-                      <p className="text-lg font-semibold tracking-tight text-slate-950">{item.value}</p>
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">events</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-500",
-                        isLead
-                          ? "bg-[linear-gradient(90deg,#2563eb_0%,#60a5fa_100%)]"
-                          : "bg-[linear-gradient(90deg,#cbd5e1_0%,#94a3b8_100%)]",
-                      )}
-                      style={{ width: `${width}%` }}
+          <div className="h-[280px] w-full rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-3 py-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} margin={{ top: 18, right: 8, left: -20, bottom: 4 }}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="#e2e8f0"
+                  strokeOpacity={0.8}
+                />
+                <XAxis
+                  dataKey="label"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={10}
+                  tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={10}
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                />
+                <Tooltip
+                  cursor={{ fill: "#eff6ff", opacity: 0.9 }}
+                  contentStyle={{
+                    backgroundColor: "rgba(255,255,255,0.96)",
+                    borderRadius: "14px",
+                    border: "1px solid #dbeafe",
+                    boxShadow: "0 12px 24px rgba(15, 23, 42, 0.08)",
+                  }}
+                  formatter={(value: number) => [`${value} events`, "Scheduled"]}
+                  labelFormatter={(label: string) => label}
+                  itemStyle={{ color: "#0f172a", fontSize: "12px", fontWeight: 600 }}
+                  labelStyle={{ color: "#475569", fontSize: "12px", fontWeight: 600, marginBottom: "4px" }}
+                />
+                <Bar dataKey="value" radius={[10, 10, 0, 0]} barSize={46}>
+                  <LabelList dataKey="value" position="top" fill="#64748b" fontSize={12} />
+                  {data.map((item, index) => (
+                    <Cell
+                      key={item.label}
+                      fill={index === 0 ? "#3b82f6" : index === 1 ? "#7dd3fc" : "#cbd5e1"}
                     />
-                  </div>
-                </div>
-              );
-            })}
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         )}
 
-        <div className="rounded-[22px] border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#eef4ff_100%)] px-4 py-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white text-[#5865f2] shadow-sm">
-              <Sparkles className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-950">Planning note</p>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{summary.planningNote}</p>
-            </div>
-          </div>
+        <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Helpful read
+          </p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{summary.note}</p>
         </div>
       </div>
     </SectionCard>
-  );
-}
-
-function InsightTile({
-  icon: Icon,
-  label,
-  value,
-  helper,
-  tone,
-}: {
-  icon: typeof TrendingUp;
-  label: string;
-  value: string;
-  helper: string;
-  tone: "blue" | "slate" | "violet";
-}) {
-  const toneClass =
-    tone === "blue"
-      ? "bg-blue-50 text-blue-700"
-      : tone === "violet"
-        ? "bg-violet-50 text-violet-700"
-        : "bg-slate-100 text-slate-700";
-
-  return (
-    <div className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{label}</p>
-        <div className={cn("flex h-8 w-8 items-center justify-center rounded-2xl", toneClass)}>
-          <Icon className="h-4 w-4" />
-        </div>
-      </div>
-      <p className="mt-3 text-xl font-semibold tracking-tight text-slate-950">{value}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-500">{helper}</p>
-    </div>
   );
 }

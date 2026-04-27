@@ -125,16 +125,7 @@ export async function getMostActiveDays(): Promise<EventDayStat[]> {
     if (error) throw error;
     if (!events) return [];
 
-    const dayOrder = [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-    ];
-    const map = new Map<string, number>(dayOrder.map((day) => [day, 0]));
+    const map = new Map<string, number>();
     const dateFormatter = new Intl.DateTimeFormat("en-US", { weekday: "long" });
 
     events.forEach((event) => {
@@ -148,10 +139,10 @@ export async function getMostActiveDays(): Promise<EventDayStat[]> {
         map.set(dayName, (map.get(dayName) ?? 0) + 1);
     });
 
-    return dayOrder.map((label) => ({
-        label,
-        value: map.get(label) ?? 0,
-    }));
+    return Array.from(map.entries())
+        .map(([label, value]) => ({ label, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
 }
 
 export async function getRecentEvents(): Promise<DashboardEvent[]> {
