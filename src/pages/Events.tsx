@@ -750,17 +750,17 @@ function EventOperationalCard({
         </div>
       )}
 
-      <div className="space-y-4 px-5 py-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+      <div className="space-y-5 px-6 py-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2.5">
               <h3 className="break-words text-lg font-semibold tracking-tight text-slate-950">{event.name}</h3>
               <Badge className={cn("rounded-full border-0", event.approved === true ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800")}>
                 {event.approved === true ? "Approved" : "Pending review"}
               </Badge>
               <StatusBadge tone={event.health} approved={event.approved === true} />
             </div>
-            <p className="mt-2 text-sm leading-7 text-slate-600">{compactDescription}</p>
+            <p className="max-w-2xl text-sm leading-7 text-slate-600">{compactDescription}</p>
           </div>
 
           <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -778,25 +778,25 @@ function EventOperationalCard({
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2">
           <MetricPill icon={Ticket} label="Registrations" value={String(event.registrationCount)} />
           <MetricPill icon={Building2} label="Owner" value={event.clubName || "Student Life"} />
           <MetricPill icon={CalendarClock} label="Date" value={formatDateLabel(event.date)} />
           <MetricPill icon={Users} label="Status" value={event.isPast ? "Past" : event.isUpcoming ? "Upcoming" : "Unscheduled"} />
         </div>
 
-        <div className="grid gap-2.5 text-sm text-slate-600 sm:grid-cols-2">
-          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
+        <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5">
             <CalendarClock className="h-4 w-4 shrink-0 text-slate-400" />
             <span className="break-words">{event.time || "Time not set"}</span>
           </div>
-          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5">
             <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
             <span className="break-words">{event.location || "Location not set"}</span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
           {event.attentionReasons.length > 0 ? (
             event.attentionReasons.map((reason) => (
               <Badge key={reason} variant="outline" className="rounded-full border-slate-200 bg-slate-50 whitespace-normal text-left text-slate-700">
@@ -817,12 +817,12 @@ function EventOperationalCard({
 
 function MetricPill({ icon: Icon, label, value }: { icon: typeof CalendarClock; label: string; value: string }) {
   return (
-    <div className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-3.5 py-3">
+    <div className="flex min-h-[94px] flex-col justify-between rounded-[18px] border border-slate-200 bg-slate-50/80 px-3.5 py-3">
       <div className="flex items-center justify-between gap-2 text-slate-500">
-        <p className="pr-2 text-xs font-semibold uppercase tracking-[0.14em] sm:tracking-[0.18em]">{label}</p>
+        <p className="pr-2 text-[11px] font-semibold uppercase tracking-[0.14em] sm:tracking-[0.18em]">{label}</p>
         <Icon className="h-4 w-4 shrink-0" />
       </div>
-      <p className="mt-1.5 break-words text-base font-semibold text-slate-950">{value}</p>
+      <p className="mt-2 break-words text-[15px] font-semibold leading-6 text-slate-950">{value}</p>
     </div>
   );
 }
