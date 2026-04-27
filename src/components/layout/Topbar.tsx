@@ -17,7 +17,7 @@ import type { SidebarLink } from "./Sidebar";
 import { useAuth } from "@/context/AuthContext";
 
 const pageDescriptions: Record<string, string> = {
-  "/": "Overview for all clubs under Connect Camp.",
+  "/dashboard": "Overview for all clubs under Connect Camp.",
   "/login": "Authenticate to access secure areas.",
   "/clubs": "Manage rosters, onboarding, and applications.",
   "/prospects": "Run onboarding workflow for emerging clubs.",

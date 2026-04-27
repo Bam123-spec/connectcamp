@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, useLocation, matchPath, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login";
+import Landing from "./pages/Landing";
 import Clubs from "./pages/Clubs";
 import Events from "./pages/Events";
 import CalendarPage from "./pages/Calendar";
@@ -52,11 +53,12 @@ function AppLayout() {
   const { session, profile } = useAuth();
   const location = useLocation();
   const isLoginRoute = location.pathname === "/login";
+  const isLandingRoute = location.pathname === "/";
   const isPublicFormRoute = Boolean(
     matchPath("/form-fill/:formId", location.pathname),
   );
   const isAuthenticatedAdmin = Boolean(session && profile?.role === "admin");
-  const showAppChrome = !isLoginRoute && !isPublicFormRoute && isAuthenticatedAdmin;
+  const showAppChrome = !isLoginRoute && !isLandingRoute && !isPublicFormRoute && isAuthenticatedAdmin;
   const [sidebarOpen, setSidebarOpen] = useState(getInitialSidebarOpen);
 
   useEffect(() => {
@@ -113,8 +115,9 @@ function AppLayout() {
           )}
         >
           <Routes>
+            <Route path="/" element={<Landing />} />
             <Route
-              path="/"
+              path="/dashboard"
               element={
                 <ProtectedRoute>
                   <Dashboard />

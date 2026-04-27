@@ -42,7 +42,7 @@ export type SidebarGroup = {
 
 export const dashboardLink: SidebarLink = {
   label: "Dashboard",
-  href: "/",
+  href: "/dashboard",
   icon: Home,
   description: "Overview and important updates.",
 };
@@ -198,7 +198,6 @@ export const accountLinks: SidebarLink[] =
 const SECTION_STORAGE_KEY = "cc.sidebar.sections.v1";
 
 export function matchesSidebarPath(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

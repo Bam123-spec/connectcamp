@@ -13,7 +13,7 @@ function Login() {
   const location = useLocation();
   const redirectPath = useMemo(() => {
     const state = location.state as { from?: { pathname?: string } } | undefined;
-    return state?.from?.pathname ?? "/";
+    return state?.from?.pathname ?? "/dashboard";
   }, [location.state]);
 
   const [email, setEmail] = useState("");
