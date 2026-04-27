@@ -214,19 +214,39 @@ function WorkflowStep({
 
 function ConnectCampWordmark() {
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <div className="grid h-11 w-11 shrink-0 place-content-center rounded-[18px] bg-[linear-gradient(145deg,#2aa8f7_0%,#4b86ff_55%,#7350ef_100%)] text-white shadow-[0_10px_24px_rgba(90,111,216,0.25)]">
-        <svg viewBox="0 0 128 128" className="h-6 w-6" aria-hidden="true" focusable="false">
-          <rect width="128" height="128" rx="24" fill="currentColor" />
-          <path
-            fill="#ffffff"
-            d="M64 18c-25.4 0-46 20.6-46 46s20.6 46 46 46c11.2 0 21.8-4 30.1-11.4l-14-16.8A23 23 0 0 1 64 85c-13 0-23.6-10.6-23.6-23.7S51 37.5 64 37.5c7.7 0 14.7 3.7 19.2 9.6l13.9-16.7C88.7 22 76.8 18 64 18Z"
-          />
-          <circle cx="64" cy="61.3" r="11" fill="#4b66f2" />
-        </svg>
-      </div>
+    <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+      <svg
+        viewBox="0 0 160 160"
+        className="h-12 w-12 shrink-0 sm:h-14 sm:w-14"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <defs>
+          <linearGradient id="connect-camp-logo-gradient" x1="16" y1="20" x2="136" y2="136" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#27b1ff" />
+            <stop offset="56%" stopColor="#3c8cff" />
+            <stop offset="100%" stopColor="#7a4de8" />
+          </linearGradient>
+        </defs>
+        <g fill="none" stroke="url(#connect-camp-logo-gradient)" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M34 56a56 56 0 0 1 89-18" strokeWidth="15" />
+          <path d="M20 85a69 69 0 0 1 26-50" strokeWidth="15" />
+          <path d="M31 114A70 70 0 0 1 19 79" strokeWidth="15" />
+          <path d="M53 134a70 70 0 0 1-16-10" strokeWidth="15" />
+          <path d="M92 135a57 57 0 0 1-33 2" strokeWidth="15" />
+          <path d="M120 120a57 57 0 0 1-18 13" strokeWidth="15" />
+          <path d="M123 48a56 56 0 0 1 10 17" strokeWidth="15" />
+          <path d="M92 48a30 30 0 1 0 0 64" strokeWidth="13" />
+          <path d="M54 58a40 40 0 0 1 47-8" strokeWidth="11" opacity="0.95" />
+          <path d="M51 104a40 40 0 0 1-2-37" strokeWidth="11" opacity="0.95" />
+          <path d="M88 114a40 40 0 0 1-28-1" strokeWidth="11" opacity="0.95" />
+        </g>
+        <circle cx="112" cy="28" r="7" fill="url(#connect-camp-logo-gradient)" />
+        <circle cx="130" cy="43" r="9" fill="url(#connect-camp-logo-gradient)" />
+        <circle cx="58" cy="92" r="7" fill="url(#connect-camp-logo-gradient)" />
+      </svg>
       <div className="min-w-0">
-        <p className="truncate text-xl font-medium tracking-tight text-[#6e56cf] sm:text-2xl">
+        <p className="truncate text-[1.55rem] font-light tracking-[-0.04em] text-[#7552d8] sm:text-[2.25rem]">
           Connect Camp
         </p>
       </div>
