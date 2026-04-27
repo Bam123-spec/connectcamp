@@ -330,7 +330,7 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
             <div className="space-y-1 px-2">
               <CompactNavItem link={dashboardLink} />
               {flatSidebarLinks
-                .filter((link) => link.href !== "/")
+                .filter((link) => link.href !== dashboardLink.href)
                 .map((link) => (
                   <CompactNavItem key={link.href} link={link} />
                 ))}
