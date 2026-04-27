@@ -195,6 +195,11 @@ export const accountLinks: SidebarLink[] =
     .filter((group) => ["admin", "workspace"].includes(group.id))
     .flatMap((group) => group.links);
 
+const sidebarGroupOrder = ["main", "clubs", "events", "admin", "workspace"] as const;
+const orderedSidebarGroups = sidebarGroupOrder
+  .map((groupId) => sidebarGroups.find((group) => group.id === groupId))
+  .filter((group): group is SidebarGroup => Boolean(group));
+
 const SECTION_STORAGE_KEY = "cc.sidebar.sections.v1";
 
 export function matchesSidebarPath(pathname: string, href: string) {
@@ -315,7 +320,7 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
                 </div>
               </div>
 
-              {sidebarGroups.map((group) => (
+              {orderedSidebarGroups.map((group) => (
                 <DropdownSection
                   key={group.id}
                   group={group}
@@ -327,13 +332,11 @@ function Sidebar({ className, open, setOpen }: SidebarProps) {
               ))}
             </div>
           ) : (
-            <div className="space-y-1 px-2">
+            <div className="space-y-3 px-2">
               <CompactNavItem link={dashboardLink} />
-              {flatSidebarLinks
-                .filter((link) => link.href !== dashboardLink.href)
-                .map((link) => (
-                  <CompactNavItem key={link.href} link={link} />
-                ))}
+              {orderedSidebarGroups.map((group) => (
+                <CompactCollapsedGroup key={group.id} group={group} />
+              ))}
               <CompactSignOutButton onClick={handleSignOut} />
             </div>
           )}
@@ -451,6 +454,30 @@ function CompactNavItem({ link }: { link: SidebarLink }) {
     >
       <Icon className="h-5 w-5 shrink-0" />
     </NavLink>
+  );
+}
+
+function CompactCollapsedGroup({ group }: { group: SidebarGroup }) {
+  const GroupIcon = group.icon;
+
+  return (
+    <div className="rounded-[18px] border border-slate-200/80 bg-white/70 py-2 shadow-sm">
+      <div className="px-2 text-center">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+          {group.label}
+        </p>
+      </div>
+      <div className="flex justify-center py-1.5">
+        <div className="grid size-7 place-content-center rounded-xl bg-slate-100 text-slate-500">
+          <GroupIcon className="h-4 w-4" />
+        </div>
+      </div>
+      <div className="space-y-1">
+        {group.links.map((link) => (
+          <CompactNavItem key={link.href} link={link} />
+        ))}
+      </div>
+    </div>
   );
 }
 
