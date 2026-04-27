@@ -513,34 +513,40 @@ export default function Tasks() {
               />
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="min-w-[180px]">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Status</p>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger variant="outline" className="h-11 w-full rounded-xl border-slate-200 bg-white shadow-sm">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-              <Select value={clubFilter} onValueChange={setClubFilter}>
-                <SelectTrigger className="min-w-[180px]">
-                  <SelectValue placeholder="Filter by club" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All clubs</SelectItem>
-                  {clubs.map((club) => (
-                    <SelectItem key={club.id} value={club.id}>
-                      {club.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Club</p>
+                <Select value={clubFilter} onValueChange={setClubFilter}>
+                  <SelectTrigger variant="outline" className="h-11 w-full rounded-xl border-slate-200 bg-white shadow-sm">
+                    <SelectValue placeholder="Filter by club" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All clubs</SelectItem>
+                    {clubs.map((club) => (
+                      <SelectItem key={club.id} value={club.id}>
+                        {club.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
