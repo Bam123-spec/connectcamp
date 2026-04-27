@@ -452,10 +452,6 @@ function Events() {
     });
   }, [activeFilter, events, searchQuery]);
 
-  const scheduleGaps = useMemo(() => events.filter((event) => event.needsScheduling).slice(0, 6), [events]);
-  const ownershipGaps = useMemo(() => events.filter((event) => !event.club_id).slice(0, 6), [events]);
-  const topInterest = useMemo(() => [...events].sort((a, b) => b.registrationCount - a.registrationCount).filter((event) => event.registrationCount > 0).slice(0, 5), [events]);
-
   const content = () => {
     if (loading) {
       return (
@@ -652,95 +648,53 @@ function Events() {
         </div>
       </section>
 
-      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,360px)]">
-        <div className="space-y-6">
-          <Card className="rounded-[28px] border-slate-200 shadow-sm">
-            <CardHeader className="gap-4 border-b border-slate-200 pb-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <CardTitle className="text-2xl tracking-tight">Event portfolio</CardTitle>
-                  <CardDescription className="mt-1">Filter for the events that need attention, not just the ones that already look complete.</CardDescription>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
-                    <Link to="/calendar">Calendar view</Link>
-                  </Button>
-                  <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
-                    <Link to="/approvals">Pending approvals</Link>
-                  </Button>
-                </div>
-              </div>
+      <Card className="rounded-[28px] border-slate-200 shadow-sm">
+        <CardHeader className="gap-4 border-b border-slate-200 pb-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <CardTitle className="text-2xl tracking-tight">Event portfolio</CardTitle>
+              <CardDescription className="mt-1">Filter for the events that need attention, not just the ones that already look complete.</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                <Link to="/calendar">Calendar view</Link>
+              </Button>
+              <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
+                <Link to="/approvals">Pending approvals</Link>
+              </Button>
+            </div>
+          </div>
 
-              <div className="space-y-4">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search events, locations, descriptions, or club names"
-                    className="h-11 rounded-2xl border-slate-200 pl-10"
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {FILTER_OPTIONS.map((option) => (
-                    <Button
-                      key={option.key}
-                      type="button"
-                      variant={activeFilter === option.key ? "default" : "outline"}
-                      className={cn(
-                        "rounded-full",
-                        activeFilter !== option.key && "border-slate-200 bg-white text-slate-700",
-                      )}
-                      onClick={() => setActiveFilter(option.key)}
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">{content()}</CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <SideListCard
-            title="Ownership gaps"
-            description="Events that still are not tied to a club owner."
-            emptyLabel="Every event has a club owner right now."
-            items={ownershipGaps.map((event) => ({
-              id: event.id,
-              label: event.name,
-              helper: event.location || "No location set",
-              tone: "urgent",
-            }))}
-          />
-
-          <SideListCard
-            title="Schedule gaps"
-            description="Events missing date, time, or location details."
-            emptyLabel="Every event has a complete schedule."
-            items={scheduleGaps.map((event) => ({
-              id: event.id,
-              label: event.name,
-              helper: event.attentionReasons.find((reason) => reason.includes("Schedule")) || "Missing schedule data",
-              tone: "watch",
-            }))}
-          />
-
-          <SideListCard
-            title="Top interest"
-            description="Events already showing the strongest registration pull."
-            emptyLabel="No registrations have been recorded yet."
-            items={topInterest.map((event) => ({
-              id: event.id,
-              label: event.name,
-              helper: `${event.registrationCount} registration${event.registrationCount === 1 ? "" : "s"}`,
-              tone: "strong",
-            }))}
-          />
-        </div>
-      </div>
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search events, locations, descriptions, or club names"
+                className="h-11 rounded-2xl border-slate-200 pl-10"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {FILTER_OPTIONS.map((option) => (
+                <Button
+                  key={option.key}
+                  type="button"
+                  variant={activeFilter === option.key ? "default" : "outline"}
+                  className={cn(
+                    "rounded-full",
+                    activeFilter !== option.key && "border-slate-200 bg-white text-slate-700",
+                  )}
+                  onClick={() => setActiveFilter(option.key)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6">{content()}</CardContent>
+      </Card>
     </div>
   );
 }
@@ -767,48 +721,6 @@ function KpiCard({
       {loading ? <Skeleton className="mt-3 h-8 w-16" /> : <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>}
       <p className="mt-2 text-sm leading-6 text-slate-500">{helper}</p>
     </div>
-  );
-}
-
-function SideListCard({
-  title,
-  description,
-  items,
-  emptyLabel,
-}: {
-  title: string;
-  description: string;
-  items: Array<{ id: string; label: string; helper: string; tone: EventInsight["health"] | "strong" }>;
-  emptyLabel: string;
-}) {
-  return (
-    <Card className="rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-xl tracking-tight">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {items.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">
-            {emptyLabel}
-          </div>
-        ) : (
-          items.map((item) => (
-            <div key={item.id} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-semibold text-slate-950">{item.label}</p>
-                  <p className="mt-1 break-words text-sm text-slate-500">{item.helper}</p>
-                </div>
-                <div className="shrink-0 self-start">
-                  <StatusBadge tone={item.tone} approved />
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
