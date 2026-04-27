@@ -14,7 +14,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/lib/supabaseClient";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
 import { Users, Building2, CalendarDays, ShieldCheck, AlertTriangle, Activity } from "lucide-react";
-import { AnalyticsChatbot } from "@/components/AnalyticsChatbot";
 import { useAuth } from "@/context/AuthContext";
 import { listForms, resolveFormsOrgId } from "@/lib/formsDataApi";
 
@@ -832,14 +831,6 @@ const Analytics = () => {
       </section>
 
       <TopClubsTable data={topClubs} loading={loading} />
-
-      <AnalyticsChatbot
-        context={{
-          stats,
-          topClubs,
-          engagement
-        }}
-      />
     </div>
   );
 };
