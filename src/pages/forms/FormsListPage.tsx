@@ -286,9 +286,9 @@ export default function FormsListPage() {
   };
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="flex min-h-[calc(100vh-9rem)] flex-col gap-6 pb-8">
       <Card className="overflow-hidden border-slate-200 shadow-sm">
-        <div className="bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_42%),linear-gradient(135deg,_#0f172a_0%,_#172554_48%,_#eff6ff_100%)] px-6 py-7 text-white">
+        <div className="bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.16),_transparent_34%),linear-gradient(135deg,_#0f172a_0%,_#172554_52%,_#1e3a8a_100%)] px-6 py-7 text-white">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl space-y-3">
               <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-100">
@@ -534,6 +534,27 @@ export default function FormsListPage() {
         formTitle={selectedForm?.title || ""}
         existingQrUrl={selectedForm?.qr_code_url || null}
       />
+
+      <div className="mt-auto rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef4ff_100%)] px-5 py-4 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">End of forms directory</p>
+            <p className="text-sm text-slate-500">
+              {loading
+                ? "Loading forms workspace..."
+                : `${filteredForms.length} visible form${filteredForms.length === 1 ? "" : "s"} across this workspace.`}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="rounded-full border-slate-200 bg-white"
+            onClick={() => navigate("/forms/create")}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Create another form
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

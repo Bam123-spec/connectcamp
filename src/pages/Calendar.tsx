@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  addDays,
   addMonths,
   addWeeks,
   eachDayOfInterval,
-  endOfMonth,
   endOfWeek,
   format,
   isSameDay,
   isSameMonth,
   parseISO,
-  startOfMonth,
   startOfWeek,
   subMonths,
+  subDays,
   subWeeks,
 } from "date-fns";
 import {
@@ -179,8 +179,8 @@ function CalendarPage() {
     }
 
     return eachDayOfInterval({
-      start: startOfWeek(startOfMonth(cursorDate), { weekStartsOn: 0 }),
-      end: endOfWeek(endOfMonth(cursorDate), { weekStartsOn: 0 }),
+      start: subDays(cursorDate, 3),
+      end: addDays(subDays(cursorDate, 3), 34),
     });
   }, [cursorDate, view]);
 
@@ -237,8 +237,13 @@ function CalendarPage() {
     setSelectedDate(today);
   };
 
+  const selectDate = (date: Date) => {
+    setSelectedDate(date);
+    setCursorDate(date);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_42%,#eff6ff_100%)] shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
         <div className="flex flex-col gap-6 px-6 py-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
@@ -271,18 +276,18 @@ function CalendarPage() {
           </div>
         </div>
 
-        <div className="grid gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-5">
-          <KpiCard label="Scheduled in view" value={periodSummary.scheduled} helper="Events with date, time, and location" icon={CheckCircle2} loading={loading} />
-          <KpiCard label="Needs review" value={periodSummary.pending} helper="Approval queue pressure by date" icon={AlertTriangle} loading={loading} />
-          <KpiCard label="Registrations" value={periodSummary.registrations} helper="Student interest in the visible period" icon={Ticket} loading={loading} />
-          <KpiCard label="Room conflicts" value={periodSummary.conflicts} helper="Same room, same date, same time" icon={Building2} loading={loading} />
-          <KpiCard label="Overlap days" value={periodSummary.overlaps} helper="Multiple events sharing the same day cluster" icon={Sparkles} loading={loading} />
-        </div>
-      </section>
+      <div className="grid gap-4 border-t border-slate-200 px-6 py-6 sm:grid-cols-2 xl:grid-cols-5">
+        <KpiCard label="Scheduled in view" value={periodSummary.scheduled} helper="Events with date, time, and location" icon={CheckCircle2} loading={loading} />
+        <KpiCard label="Needs review" value={periodSummary.pending} helper="Approval queue pressure by date" icon={AlertTriangle} loading={loading} />
+        <KpiCard label="Registrations" value={periodSummary.registrations} helper="Student interest in the visible period" icon={Ticket} loading={loading} />
+        <KpiCard label="Room conflicts" value={periodSummary.conflicts} helper="Same room, same date, same time" icon={Building2} loading={loading} />
+        <KpiCard label="Overlap days" value={periodSummary.overlaps} helper="Multiple events sharing the same day cluster" icon={Sparkles} loading={loading} />
+      </div>
+    </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_380px]">
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,2.15fr)_280px]">
         <div className="space-y-6">
-          <Card className="rounded-[28px] border-slate-200 shadow-sm">
+          <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
             <CardHeader className="gap-4 border-b border-slate-200 pb-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
@@ -329,7 +334,7 @@ function CalendarPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="pt-6">
+            <CardContent className="pt-5">
               {loading ? (
                 <Skeleton className="h-[720px] rounded-[24px]" />
               ) : error ? (
@@ -341,14 +346,14 @@ function CalendarPage() {
                   days={visibleDays}
                   cursorDate={cursorDate}
                   selectedDate={selectedDate}
-                  onSelectDate={setSelectedDate}
+                  onSelectDate={selectDate}
                   eventsByDate={eventsByDate}
                 />
               ) : (
                 <WeekGrid
                   days={visibleDays}
                   selectedDate={selectedDate}
-                  onSelectDate={setSelectedDate}
+                  onSelectDate={selectDate}
                   eventsByDate={eventsByDate}
                 />
               )}
@@ -383,14 +388,14 @@ function MonthGrid({
 }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
         {Array.from({ length: 7 }).map((_, index) => {
           const day = days[index];
           return <div key={day.toISOString()}>{format(day, "EEE")}</div>;
         })}
       </div>
 
-      <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-2">
         {days.map((day) => {
           const key = format(day, "yyyy-MM-dd");
           const dayEvents = (eventsByDate.get(key) ?? []).slice().sort(dateEventSort);
@@ -402,7 +407,7 @@ function MonthGrid({
               type="button"
               onClick={() => onSelectDate(day)}
               className={cn(
-                "min-h-[140px] rounded-[22px] border p-3 text-left transition-all",
+                "flex min-h-[156px] flex-col overflow-hidden rounded-[24px] border p-3 text-left transition-all",
                 isSelected ? "border-slate-900 bg-slate-950 text-white shadow-lg" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm",
                 !isCurrentMonth && !isSelected && "bg-slate-50 text-slate-400",
               )}
@@ -413,7 +418,7 @@ function MonthGrid({
                   <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", isSelected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600")}>{dayEvents.length}</span>
                 )}
               </div>
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 min-h-0 flex-1 space-y-2.5 overflow-hidden">
                 {dayEvents.slice(0, 3).map((event) => (
                   <MiniEventChip key={event.id} event={event} selected={isSelected} />
                 ))}
@@ -452,7 +457,7 @@ function WeekGrid({
             type="button"
             onClick={() => onSelectDate(day)}
             className={cn(
-              "flex min-h-[420px] flex-col rounded-[24px] border p-4 text-left transition-all",
+              "flex min-h-[420px] flex-col overflow-hidden rounded-[24px] border p-4 text-left transition-all",
               isSelected ? "border-slate-900 bg-slate-950 text-white shadow-lg" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm",
             )}
           >
@@ -461,7 +466,7 @@ function WeekGrid({
               <p className={cn("mt-1 text-lg font-semibold", isSelected ? "text-white" : "text-slate-950")}>{format(day, "MMM d")}</p>
             </div>
 
-            <div className="mt-4 flex-1 space-y-2">
+            <div className="mt-4 flex-1 space-y-2.5 overflow-hidden">
               {dayEvents.length === 0 ? (
                 <div className={cn("rounded-[18px] border border-dashed px-3 py-6 text-center text-sm", isSelected ? "border-white/20 text-white/70" : "border-slate-200 text-slate-500")}>No scheduled events.</div>
               ) : (
@@ -480,7 +485,7 @@ function MiniEventChip({ event, selected, expanded = false }: { event: CalendarV
   return (
     <div
       className={cn(
-        "rounded-2xl border px-3 py-2 text-left",
+        "w-full min-w-0 overflow-hidden rounded-[20px] border px-3 py-2 text-left shadow-sm",
         selected
           ? "border-white/15 bg-white/10 text-white"
           : tone === "urgent"
@@ -493,18 +498,18 @@ function MiniEventChip({ event, selected, expanded = false }: { event: CalendarV
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className={cn("text-sm font-semibold leading-5", selected && "text-white")}>{event.name}</p>
+        <p className={cn("min-w-0 break-words text-[12px] font-semibold leading-4", selected && "text-white")}>{event.name}</p>
         {event.roomConflictCount > 1 && <AlertTriangle className={cn("mt-0.5 h-3.5 w-3.5", selected ? "text-white" : "text-red-500")} />}
       </div>
-      <div className={cn("mt-1 text-xs", selected ? "text-white/75" : "text-slate-500")}>
+      <div className={cn("mt-1 break-words text-[11px] leading-4", selected ? "text-white/75" : "text-slate-500")}>
         {event.time || "Time TBD"}
         {event.location ? ` • ${event.location}` : ""}
       </div>
       {expanded && (
-        <div className={cn("mt-2 flex flex-wrap gap-1", selected ? "text-white/80" : "text-slate-500")}>
-          {event.isPending && <Badge className={cn("rounded-full border-0", selected ? "bg-white/15 text-white" : "bg-amber-100 text-amber-800")}>Needs review</Badge>}
-          {event.overlapCount > 1 && <Badge className={cn("rounded-full border-0", selected ? "bg-white/15 text-white" : "bg-sky-100 text-sky-700")}>Overlap</Badge>}
-          {event.registrationCount > 0 && <Badge className={cn("rounded-full border-0", selected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700")}>{event.registrationCount} registrations</Badge>}
+        <div className={cn("mt-2 flex flex-wrap gap-1.5", selected ? "text-white/80" : "text-slate-500")}>
+          {event.isPending && <Badge className={cn("rounded-full border-0 px-2 py-0.5 text-[10px]", selected ? "bg-white/15 text-white" : "bg-amber-100 text-amber-800")}>Needs review</Badge>}
+          {event.overlapCount > 1 && <Badge className={cn("rounded-full border-0 px-2 py-0.5 text-[10px]", selected ? "bg-white/15 text-white" : "bg-sky-100 text-sky-700")}>Overlap</Badge>}
+          {event.registrationCount > 0 && <Badge className={cn("rounded-full border-0 px-2 py-0.5 text-[10px]", selected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700")}>{event.registrationCount} registrations</Badge>}
         </div>
       )}
     </div>
@@ -513,12 +518,12 @@ function MiniEventChip({ event, selected, expanded = false }: { event: CalendarV
 
 function SelectedDayCard({ selectedDate, events, loading }: { selectedDate: Date; events: CalendarViewEvent[]; loading: boolean }) {
   return (
-    <Card className="rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader>
+    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
+      <CardHeader className="gap-2 pb-4">
         <CardTitle className="text-xl tracking-tight">{format(selectedDate, "EEEE, MMMM d")}</CardTitle>
         <CardDescription>Agenda for the selected day, sorted for quick review.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2.5">
         {loading ? (
           Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-[20px]" />)
         ) : events.length === 0 ? (
@@ -535,7 +540,7 @@ function SelectedDayCard({ selectedDate, events, loading }: { selectedDate: Date
                 </div>
                 <EventStateBadge event={event} />
               </div>
-              <div className="mt-3 grid gap-2 text-sm text-slate-600">
+              <div className="mt-3 grid gap-2 text-sm leading-6 text-slate-600">
                 <div className="flex items-center gap-2">
                   <Clock3 className="h-4 w-4 text-slate-400" />
                   <span>{event.time || "Time not set"}</span>
@@ -580,12 +585,12 @@ function InsightListCard({
   emptyLabel: string;
 }) {
   return (
-    <Card className="rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader>
+    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
+      <CardHeader className="gap-2 pb-4">
         <CardTitle className="text-xl tracking-tight">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2.5">
         {loading ? (
           Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
         ) : items.length === 0 ? (
@@ -615,12 +620,12 @@ function InsightListCard({
 
 function BottleneckCard({ items, loading }: { items: ApprovalBottleneck[]; loading: boolean }) {
   return (
-    <Card className="rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader>
+    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
+      <CardHeader className="gap-2 pb-4">
         <CardTitle className="text-xl tracking-tight">Approval bottlenecks</CardTitle>
         <CardDescription>Dates carrying the most approval work in the current view.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2.5">
         {loading ? (
           Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
         ) : items.length === 0 ? (
@@ -645,12 +650,12 @@ function BottleneckCard({ items, loading }: { items: ApprovalBottleneck[]; loadi
 
 function OverlapCard({ items, loading }: { items: ProgrammingOverlap[]; loading: boolean }) {
   return (
-    <Card className="rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader>
+    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
+      <CardHeader className="gap-2 pb-4">
         <CardTitle className="text-xl tracking-tight">Programming overlap</CardTitle>
         <CardDescription>Heavy program clustering by day. Campus is estimated from location until dedicated campus fields land.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2.5">
         {loading ? (
           Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
         ) : items.length === 0 ? (
@@ -675,12 +680,12 @@ function OverlapCard({ items, loading }: { items: ProgrammingOverlap[]; loading:
 
 function UnscheduledCard({ items, loading }: { items: CalendarViewEvent[]; loading: boolean }) {
   return (
-    <Card className="rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader>
+    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
+      <CardHeader className="gap-2 pb-4">
         <CardTitle className="text-xl tracking-tight">Scheduling queue</CardTitle>
         <CardDescription>Events still missing date, time, or location.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2.5">
         {loading ? (
           Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
         ) : items.length === 0 ? (
@@ -717,13 +722,13 @@ function KpiCard({
   loading: boolean;
 }) {
   return (
-    <div className="bg-white px-5 py-4">
+    <div className="h-full rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-sm">
       <div className="flex items-center justify-between gap-3 text-slate-500">
         <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
         <Icon className="h-4 w-4" />
       </div>
       {loading ? <Skeleton className="mt-3 h-8 w-16" /> : <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>}
-      <p className="mt-2 text-sm text-slate-500">{helper}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{helper}</p>
     </div>
   );
 }
