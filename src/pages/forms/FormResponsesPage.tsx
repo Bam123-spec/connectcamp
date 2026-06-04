@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Table,
@@ -42,13 +42,7 @@ export default function FormResponsesPage() {
 
   const orgId = useMemo(() => resolveFormsOrgId(profile?.org_id), [profile?.org_id]);
 
-  useEffect(() => {
-    if (formId) {
-      fetchData(formId);
-    }
-  }, [formId, orgId]);
-
-  const fetchData = async (id: string) => {
+  const fetchData = useCallback(async (id: string) => {
     try {
       setLoading(true);
 
@@ -70,16 +64,23 @@ export default function FormResponsesPage() {
 
       const loadedResponses = await fetchFormResponses(id, loadedFields);
       setResponses(loadedResponses);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unable to fetch form responses.";
       toast({
         title: "Error loading data",
-        description: error.message || "Unable to fetch form responses.",
+        description: message,
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate, orgId, toast]);
+
+  useEffect(() => {
+    if (formId) {
+      void fetchData(formId);
+    }
+  }, [fetchData, formId]);
 
   const handleExportCsv = () => {
     if (!fields.length || !responses.length) return;
@@ -141,7 +142,7 @@ export default function FormResponsesPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );

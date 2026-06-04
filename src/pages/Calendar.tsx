@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  addDays,
   addMonths,
   addWeeks,
   eachDayOfInterval,
+  endOfMonth,
   endOfWeek,
   format,
   isSameDay,
   isSameMonth,
   parseISO,
+  startOfMonth,
   startOfWeek,
   subMonths,
-  subDays,
   subWeeks,
 } from "date-fns";
 import {
@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchCalendarWorkspace,
@@ -48,6 +48,7 @@ import { cn } from "@/lib/utils";
 
 type CalendarFilter = "all" | "needs_review" | "conflicts" | "overlap" | "scheduled" | "unscheduled";
 type CalendarView = "month" | "week";
+type CalendarInspectorTab = "selected-day" | "room-conflicts" | "bottlenecks" | "overlap" | "queue";
 
 const FILTERS: Array<{ key: CalendarFilter; label: string }> = [
   { key: "all", label: "All events" },
@@ -131,6 +132,7 @@ function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<CalendarView>("month");
+  const [inspectorTab, setInspectorTab] = useState<CalendarInspectorTab>("selected-day");
   const [cursorDate, setCursorDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState("");
@@ -179,8 +181,8 @@ function CalendarPage() {
     }
 
     return eachDayOfInterval({
-      start: subDays(cursorDate, 3),
-      end: addDays(subDays(cursorDate, 3), 34),
+      start: startOfWeek(startOfMonth(cursorDate), { weekStartsOn: 0 }),
+      end: endOfWeek(endOfMonth(cursorDate), { weekStartsOn: 0 }),
     });
   }, [cursorDate, view]);
 
@@ -223,6 +225,11 @@ function CalendarPage() {
 
   const unscheduledEvents = useMemo(() => (snapshot?.unscheduledEvents ?? []).slice(0, 6), [snapshot?.unscheduledEvents]);
 
+  const handleSelectDate = useCallback((date: Date) => {
+    setSelectedDate(date);
+    setInspectorTab("selected-day");
+  }, []);
+
   const goToPrevious = () => {
     setCursorDate((current) => (view === "month" ? subMonths(current, 1) : subWeeks(current, 1)));
   };
@@ -237,24 +244,19 @@ function CalendarPage() {
     setSelectedDate(today);
   };
 
-  const selectDate = (date: Date) => {
-    setSelectedDate(date);
-    setCursorDate(date);
-  };
-
   return (
-    <div className="space-y-8">
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_42%,#eff6ff_100%)] shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-        <div className="flex flex-col gap-6 px-6 py-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Calendar Workspace</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">See the schedule the way Student Life actually runs it.</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              Use a true month or week calendar to spot room conflicts, stacked programming days, and approval bottlenecks before they become operational problems.
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Calendar workspace</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Schedule, inspect, and resolve.</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Review room conflicts, approval pressure, and unscheduled events without losing the calendar view.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Tabs value={view} onValueChange={(next) => setView(next as CalendarView)}>
               <TabsList className="rounded-full bg-slate-100 p-1">
                 <TabsTrigger value="month" className="rounded-full px-4">Month</TabsTrigger>
@@ -265,7 +267,7 @@ function CalendarPage() {
               Today
             </Button>
             <Button asChild variant="outline" className="rounded-full border-slate-200 bg-white">
-              <Link to="/events">Open events workspace</Link>
+              <Link to="/events">Open events</Link>
             </Button>
             <Button asChild className="rounded-full px-5">
               <Link to="/events/create">
@@ -276,18 +278,18 @@ function CalendarPage() {
           </div>
         </div>
 
-      <div className="grid gap-4 border-t border-slate-200 px-6 py-6 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiCard label="Scheduled in view" value={periodSummary.scheduled} helper="Events with date, time, and location" icon={CheckCircle2} loading={loading} />
-        <KpiCard label="Needs review" value={periodSummary.pending} helper="Approval queue pressure by date" icon={AlertTriangle} loading={loading} />
-        <KpiCard label="Registrations" value={periodSummary.registrations} helper="Student interest in the visible period" icon={Ticket} loading={loading} />
-        <KpiCard label="Room conflicts" value={periodSummary.conflicts} helper="Same room, same date, same time" icon={Building2} loading={loading} />
-        <KpiCard label="Overlap days" value={periodSummary.overlaps} helper="Multiple events sharing the same day cluster" icon={Sparkles} loading={loading} />
-      </div>
-    </section>
+        <div className="grid gap-px border-t border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-5">
+          <KpiCard label="Scheduled in view" value={periodSummary.scheduled} helper="Events with date, time, and location" icon={CheckCircle2} loading={loading} />
+          <KpiCard label="Needs review" value={periodSummary.pending} helper="Approval queue pressure by date" icon={AlertTriangle} loading={loading} />
+          <KpiCard label="Registrations" value={periodSummary.registrations} helper="Student interest in the visible period" icon={Ticket} loading={loading} />
+          <KpiCard label="Room conflicts" value={periodSummary.conflicts} helper="Same room, same date, same time" icon={Building2} loading={loading} />
+          <KpiCard label="Overlap days" value={periodSummary.overlaps} helper="Multiple events sharing the same day cluster" icon={Sparkles} loading={loading} />
+        </div>
+      </section>
 
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,2.15fr)_280px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.9fr)_340px]">
         <div className="space-y-6">
-          <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
+          <Card className="rounded-[28px] border-slate-200 shadow-sm">
             <CardHeader className="gap-4 border-b border-slate-200 pb-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
@@ -334,7 +336,7 @@ function CalendarPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="pt-5">
+            <CardContent className="pt-6">
               {loading ? (
                 <Skeleton className="h-[720px] rounded-[24px]" />
               ) : error ? (
@@ -346,14 +348,14 @@ function CalendarPage() {
                   days={visibleDays}
                   cursorDate={cursorDate}
                   selectedDate={selectedDate}
-                  onSelectDate={selectDate}
+                  onSelectDate={handleSelectDate}
                   eventsByDate={eventsByDate}
                 />
               ) : (
                 <WeekGrid
                   days={visibleDays}
                   selectedDate={selectedDate}
-                  onSelectDate={selectDate}
+                  onSelectDate={handleSelectDate}
                   eventsByDate={eventsByDate}
                 />
               )}
@@ -361,12 +363,18 @@ function CalendarPage() {
           </Card>
         </div>
 
-        <div className="space-y-6">
-          <SelectedDayCard selectedDate={selectedDate} events={selectedDayEvents} loading={loading} />
-          <InsightListCard title="Room conflicts" description="Conflicts in the visible period that need a room or time adjustment." items={visibleRoomConflicts} loading={loading} emptyLabel="No room conflicts in this view." />
-          <BottleneckCard items={visibleBottlenecks} loading={loading} />
-          <OverlapCard items={visibleOverlaps} loading={loading} />
-          <UnscheduledCard items={unscheduledEvents} loading={loading} />
+        <div className="xl:sticky xl:top-6">
+          <CalendarInspector
+            selectedDate={selectedDate}
+            selectedDayEvents={selectedDayEvents}
+            roomConflicts={visibleRoomConflicts}
+            bottlenecks={visibleBottlenecks}
+            overlaps={visibleOverlaps}
+            unscheduledEvents={unscheduledEvents}
+            loading={loading}
+            inspectorTab={inspectorTab}
+            setInspectorTab={setInspectorTab}
+          />
         </div>
       </div>
     </div>
@@ -388,47 +396,53 @@ function MonthGrid({
 }) {
   return (
     <div className="space-y-4">
-              <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {Array.from({ length: 7 }).map((_, index) => {
-          const day = days[index];
-          return <div key={day.toISOString()}>{format(day, "EEE")}</div>;
-        })}
+      <div className="lg:hidden">
+        <CompactDayList days={days} selectedDate={selectedDate} onSelectDate={onSelectDate} eventsByDate={eventsByDate} monthReferenceDate={cursorDate} />
       </div>
 
-              <div className="grid grid-cols-7 gap-2">
-        {days.map((day) => {
-          const key = format(day, "yyyy-MM-dd");
-          const dayEvents = (eventsByDate.get(key) ?? []).slice().sort(dateEventSort);
-          const isSelected = isSameDay(day, selectedDate);
-          const isCurrentMonth = isSameMonth(day, cursorDate);
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onSelectDate(day)}
-              className={cn(
-                "flex min-h-[156px] flex-col overflow-hidden rounded-[24px] border p-3 text-left transition-all",
-                isSelected ? "border-slate-900 bg-slate-950 text-white shadow-lg" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm",
-                !isCurrentMonth && !isSelected && "bg-slate-50 text-slate-400",
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className={cn("text-sm font-semibold", !isSelected && isCurrentMonth && "text-slate-950")}>{format(day, "d")}</span>
-                {dayEvents.length > 0 && (
-                  <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", isSelected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600")}>{dayEvents.length}</span>
+      <div className="hidden lg:block">
+        <div className="grid grid-cols-7 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          {Array.from({ length: 7 }).map((_, index) => {
+            const day = days[index];
+            return <div key={day.toISOString()}>{format(day, "EEE")}</div>;
+          })}
+        </div>
+
+        <div className="mt-2 grid grid-cols-7 gap-2">
+          {days.map((day) => {
+            const key = format(day, "yyyy-MM-dd");
+            const dayEvents = (eventsByDate.get(key) ?? []).slice().sort(dateEventSort);
+            const isSelected = isSameDay(day, selectedDate);
+            const isCurrentMonth = isSameMonth(day, cursorDate);
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onSelectDate(day)}
+                className={cn(
+                  "min-h-[128px] rounded-[22px] border p-3 text-left transition-all",
+                  isSelected ? "border-slate-900 bg-slate-950 text-white shadow-lg" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm",
+                  !isCurrentMonth && !isSelected && "bg-slate-50 text-slate-400",
                 )}
-              </div>
-              <div className="mt-3 min-h-0 flex-1 space-y-2.5 overflow-hidden">
-                {dayEvents.slice(0, 3).map((event) => (
-                  <MiniEventChip key={event.id} event={event} selected={isSelected} />
-                ))}
-                {dayEvents.length > 3 && (
-                  <div className={cn("text-xs font-medium", isSelected ? "text-white/70" : "text-slate-500")}>+{dayEvents.length - 3} more</div>
-                )}
-              </div>
-            </button>
-          );
-        })}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn("text-sm font-semibold", !isSelected && isCurrentMonth && "text-slate-950")}>{format(day, "d")}</span>
+                  {dayEvents.length > 0 && (
+                    <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", isSelected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600")}>{dayEvents.length}</span>
+                  )}
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {dayEvents.slice(0, 2).map((event) => (
+                    <MiniEventChip key={event.id} event={event} selected={isSelected} compact />
+                  ))}
+                  {dayEvents.length > 2 && (
+                    <div className={cn("text-[11px] font-medium", isSelected ? "text-white/70" : "text-slate-500")}>+{dayEvents.length - 2} more</div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -446,31 +460,109 @@ function WeekGrid({
   eventsByDate: Map<string, CalendarViewEvent[]>;
 }) {
   return (
-    <div className="grid gap-3 lg:grid-cols-7">
+    <div className="space-y-4">
+      <div className="lg:hidden">
+        <CompactDayList days={days} selectedDate={selectedDate} onSelectDate={onSelectDate} eventsByDate={eventsByDate} />
+      </div>
+
+      <div className="hidden lg:grid gap-3 lg:grid-cols-7">
+        {days.map((day) => {
+          const key = format(day, "yyyy-MM-dd");
+          const dayEvents = (eventsByDate.get(key) ?? []).slice().sort(dateEventSort);
+          const isSelected = isSameDay(day, selectedDate);
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onSelectDate(day)}
+              className={cn(
+                "flex min-h-[360px] flex-col rounded-[24px] border p-4 text-left transition-all",
+                isSelected ? "border-slate-900 bg-slate-950 text-white shadow-lg" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm",
+              )}
+            >
+              <div className="border-b border-slate-200/70 pb-3">
+                <p className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", isSelected ? "text-white/70" : "text-slate-500")}>{format(day, "EEE")}</p>
+                <p className={cn("mt-1 text-lg font-semibold tracking-tight", isSelected ? "text-white" : "text-slate-950")}>{format(day, "MMM d")}</p>
+              </div>
+
+              <div className="mt-4 flex-1 space-y-2">
+                {dayEvents.length === 0 ? (
+                  <div className={cn("rounded-[18px] border border-dashed px-3 py-5 text-center text-sm", isSelected ? "border-white/20 text-white/70" : "border-slate-200 text-slate-500")}>No scheduled events.</div>
+                ) : (
+                  <>
+                    {dayEvents.slice(0, 3).map((event) => (
+                      <MiniEventChip key={event.id} event={event} selected={isSelected} expanded />
+                    ))}
+                    {dayEvents.length > 3 && (
+                      <div className={cn("text-xs font-medium", isSelected ? "text-white/70" : "text-slate-500")}>+{dayEvents.length - 3} more</div>
+                    )}
+                  </>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CompactDayList({
+  days,
+  selectedDate,
+  onSelectDate,
+  eventsByDate,
+  monthReferenceDate,
+}: {
+  days: Date[];
+  selectedDate: Date;
+  onSelectDate: (date: Date) => void;
+  eventsByDate: Map<string, CalendarViewEvent[]>;
+  monthReferenceDate?: Date;
+}) {
+  return (
+    <div className="space-y-2">
       {days.map((day) => {
         const key = format(day, "yyyy-MM-dd");
         const dayEvents = (eventsByDate.get(key) ?? []).slice().sort(dateEventSort);
         const isSelected = isSameDay(day, selectedDate);
+        const isCurrentMonth = monthReferenceDate ? isSameMonth(day, monthReferenceDate) : true;
         return (
           <button
             key={key}
             type="button"
             onClick={() => onSelectDate(day)}
             className={cn(
-              "flex min-h-[420px] flex-col overflow-hidden rounded-[24px] border p-4 text-left transition-all",
+              "w-full rounded-[20px] border p-3 text-left transition-all",
               isSelected ? "border-slate-900 bg-slate-950 text-white shadow-lg" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm",
+              !isCurrentMonth && !isSelected && "bg-slate-50 text-slate-400",
             )}
           >
-            <div className="border-b border-slate-200/70 pb-3">
-              <p className={cn("text-xs font-semibold uppercase tracking-[0.18em]", isSelected ? "text-white/70" : "text-slate-500")}>{format(day, "EEE")}</p>
-              <p className={cn("mt-1 text-lg font-semibold", isSelected ? "text-white" : "text-slate-950")}>{format(day, "MMM d")}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className={cn("text-sm font-semibold tracking-tight", !isSelected && "text-slate-950")}>
+                  {format(day, "EEE, MMM d")}
+                </p>
+                <p className={cn("mt-1 text-xs", isSelected ? "text-white/70" : "text-slate-500")}>
+                  {dayEvents.length > 0 ? `${dayEvents.length} event${dayEvents.length === 1 ? "" : "s"}` : "No events"}
+                </p>
+              </div>
+              {dayEvents.length > 0 && (
+                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", isSelected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600")}>{dayEvents.length}</span>
+              )}
             </div>
-
-            <div className="mt-4 flex-1 space-y-2.5 overflow-hidden">
+            <div className="mt-3 flex flex-wrap gap-1.5">
               {dayEvents.length === 0 ? (
-                <div className={cn("rounded-[18px] border border-dashed px-3 py-6 text-center text-sm", isSelected ? "border-white/20 text-white/70" : "border-slate-200 text-slate-500")}>No scheduled events.</div>
+                <span className={cn("rounded-full border border-dashed px-2.5 py-1 text-[11px]", isSelected ? "border-white/20 text-white/70" : "border-slate-200 text-slate-500")}>No scheduled events</span>
               ) : (
-                dayEvents.map((event) => <MiniEventChip key={event.id} event={event} selected={isSelected} expanded />)
+                <>
+                  {dayEvents.slice(0, 2).map((event) => (
+                    <MiniEventChip key={event.id} event={event} selected={isSelected} compact />
+                  ))}
+                  {dayEvents.length > 2 && (
+                    <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium", isSelected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600")}>+{dayEvents.length - 2} more</span>
+                  )}
+                </>
               )}
             </div>
           </button>
@@ -480,12 +572,23 @@ function WeekGrid({
   );
 }
 
-function MiniEventChip({ event, selected, expanded = false }: { event: CalendarViewEvent; selected: boolean; expanded?: boolean }) {
+function MiniEventChip({
+  event,
+  selected,
+  expanded = false,
+  compact = false,
+}: {
+  event: CalendarViewEvent;
+  selected: boolean;
+  expanded?: boolean;
+  compact?: boolean;
+}) {
   const tone = eventTone(event);
   return (
     <div
       className={cn(
-        "w-full min-w-0 overflow-hidden rounded-[20px] border px-3 py-2 text-left shadow-sm",
+        "rounded-2xl border text-left",
+        compact ? "px-2.5 py-1.5" : "px-3 py-2",
         selected
           ? "border-white/15 bg-white/10 text-white"
           : tone === "urgent"
@@ -498,213 +601,257 @@ function MiniEventChip({ event, selected, expanded = false }: { event: CalendarV
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className={cn("min-w-0 break-words text-[12px] font-semibold leading-4", selected && "text-white")}>{event.name}</p>
-        {event.roomConflictCount > 1 && <AlertTriangle className={cn("mt-0.5 h-3.5 w-3.5", selected ? "text-white" : "text-red-500")} />}
+        <p className={cn(compact ? "text-[11px] font-medium leading-4" : "text-sm font-semibold leading-5", selected && "text-white")}>{event.name}</p>
+        {event.roomConflictCount > 1 && <AlertTriangle className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", selected ? "text-white" : "text-red-500")} />}
       </div>
-      <div className={cn("mt-1 break-words text-[11px] leading-4", selected ? "text-white/75" : "text-slate-500")}>
+      <div className={cn("mt-1 text-xs", selected ? "text-white/75" : "text-slate-500")}>
         {event.time || "Time TBD"}
         {event.location ? ` • ${event.location}` : ""}
       </div>
       {expanded && (
-        <div className={cn("mt-2 flex flex-wrap gap-1.5", selected ? "text-white/80" : "text-slate-500")}>
-          {event.isPending && <Badge className={cn("rounded-full border-0 px-2 py-0.5 text-[10px]", selected ? "bg-white/15 text-white" : "bg-amber-100 text-amber-800")}>Needs review</Badge>}
-          {event.overlapCount > 1 && <Badge className={cn("rounded-full border-0 px-2 py-0.5 text-[10px]", selected ? "bg-white/15 text-white" : "bg-sky-100 text-sky-700")}>Overlap</Badge>}
-          {event.registrationCount > 0 && <Badge className={cn("rounded-full border-0 px-2 py-0.5 text-[10px]", selected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700")}>{event.registrationCount} registrations</Badge>}
+        <div className={cn("mt-2 flex flex-wrap gap-1", selected ? "text-white/80" : "text-slate-500")}>
+          {event.isPending && <Badge className={cn("rounded-full border-0", selected ? "bg-white/15 text-white" : "bg-amber-100 text-amber-800")}>Needs review</Badge>}
+          {event.overlapCount > 1 && <Badge className={cn("rounded-full border-0", selected ? "bg-white/15 text-white" : "bg-sky-100 text-sky-700")}>Overlap</Badge>}
+          {event.registrationCount > 0 && <Badge className={cn("rounded-full border-0", selected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700")}>{event.registrationCount} registrations</Badge>}
         </div>
       )}
     </div>
   );
 }
 
-function SelectedDayCard({ selectedDate, events, loading }: { selectedDate: Date; events: CalendarViewEvent[]; loading: boolean }) {
-  return (
-    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader className="gap-2 pb-4">
-        <CardTitle className="text-xl tracking-tight">{format(selectedDate, "EEEE, MMMM d")}</CardTitle>
-        <CardDescription>Agenda for the selected day, sorted for quick review.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2.5">
-        {loading ? (
-          Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-[20px]" />)
-        ) : events.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            No events are scheduled for this date.
-          </div>
-        ) : (
-          events.map((event) => (
-            <div key={event.id} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{event.name}</p>
-                  <p className="mt-1 text-sm text-slate-500">{event.clubName || "Student Life"}</p>
-                </div>
-                <EventStateBadge event={event} />
-              </div>
-              <div className="mt-3 grid gap-2 text-sm leading-6 text-slate-600">
-                <div className="flex items-center gap-2">
-                  <Clock3 className="h-4 w-4 text-slate-400" />
-                  <span>{event.time || "Time not set"}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-slate-400" />
-                  <span>{event.location || "Location not set"}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Ticket className="h-4 w-4 text-slate-400" />
-                  <span>{event.registrationCount} registration{event.registrationCount === 1 ? "" : "s"}</span>
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {event.roomConflictCount > 1 && <Badge className="rounded-full border-0 bg-red-100 text-red-700">Room conflict</Badge>}
-                {event.overlapCount > 1 && <Badge className="rounded-full border-0 bg-sky-100 text-sky-700">Programming overlap</Badge>}
-                {event.needsScheduling && <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Schedule incomplete</Badge>}
-                {event.campusLabel && <Badge className="rounded-full border-0 bg-slate-100 text-slate-700">{event.campusLabel}</Badge>}
-              </div>
-            </div>
-          ))
-        )}
-        <Button asChild variant="outline" className="w-full rounded-full border-slate-200 bg-white">
-          <Link to="/events">Open full event operations</Link>
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function InsightListCard({
-  title,
-  description,
-  items,
+function CalendarInspector({
+  selectedDate,
+  selectedDayEvents,
+  roomConflicts,
+  bottlenecks,
+  overlaps,
+  unscheduledEvents,
   loading,
-  emptyLabel,
+  inspectorTab,
+  setInspectorTab,
 }: {
-  title: string;
-  description: string;
-  items: RoomConflict[];
+  selectedDate: Date;
+  selectedDayEvents: CalendarViewEvent[];
+  roomConflicts: RoomConflict[];
+  bottlenecks: ApprovalBottleneck[];
+  overlaps: ProgrammingOverlap[];
+  unscheduledEvents: CalendarViewEvent[];
   loading: boolean;
-  emptyLabel: string;
+  inspectorTab: CalendarInspectorTab;
+  setInspectorTab: (value: CalendarInspectorTab) => void;
 }) {
   return (
-    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader className="gap-2 pb-4">
-        <CardTitle className="text-xl tracking-tight">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2.5">
-        {loading ? (
-          Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
-        ) : items.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">{emptyLabel}</div>
-        ) : (
-          items.map((item) => (
-            <div key={item.key} className="rounded-[20px] border border-red-200 bg-red-50 px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{item.location}</p>
-                  <p className="mt-1 text-sm text-slate-600">{formatDateLabel(item.date)} • {item.time}</p>
-                </div>
-                <Badge className="rounded-full border-0 bg-red-100 text-red-700">{item.events.length} events</Badge>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {item.events.map((event) => (
-                  <Badge key={event.id} variant="outline" className="rounded-full border-red-200 bg-white text-red-700">{event.name}</Badge>
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-      </CardContent>
-    </Card>
+    <Tabs value={inspectorTab} onValueChange={(value) => setInspectorTab(value as CalendarInspectorTab)}>
+      <Card className="rounded-[28px] border-slate-200 shadow-sm">
+        <CardHeader className="gap-4 border-b border-slate-200 pb-4">
+          <div className="space-y-1">
+            <CardTitle className="text-xl tracking-tight">Workspace inspector</CardTitle>
+            <CardDescription>One place to inspect the selected day, conflicts, and queue pressure.</CardDescription>
+          </div>
+
+          <TabsList className="flex h-auto w-full flex-wrap gap-1 rounded-[18px] bg-slate-100 p-1">
+            <TabsTrigger value="selected-day" className="rounded-full px-3 py-1.5 text-xs">Day</TabsTrigger>
+            <TabsTrigger value="room-conflicts" className="rounded-full px-3 py-1.5 text-xs">Conflicts</TabsTrigger>
+            <TabsTrigger value="bottlenecks" className="rounded-full px-3 py-1.5 text-xs">Bottlenecks</TabsTrigger>
+            <TabsTrigger value="overlap" className="rounded-full px-3 py-1.5 text-xs">Overlap</TabsTrigger>
+            <TabsTrigger value="queue" className="rounded-full px-3 py-1.5 text-xs">Queue</TabsTrigger>
+          </TabsList>
+        </CardHeader>
+        <CardContent className="pt-5">
+          <div className="max-h-[calc(100vh-260px)] overflow-y-auto pr-1 xl:pr-2">
+            <TabsContent value="selected-day" className="mt-0 space-y-3">
+              <InspectorSectionHeading
+                eyebrow="Selected day"
+                title={format(selectedDate, "EEEE, MMMM d")}
+                meta={`${selectedDayEvents.length} event${selectedDayEvents.length === 1 ? "" : "s"}`}
+              />
+
+              {loading ? (
+                Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-[20px]" />)
+              ) : selectedDayEvents.length === 0 ? (
+                <InspectorEmptyState message="No events are scheduled for this date." />
+              ) : (
+                selectedDayEvents.map((event) => (
+                  <div key={event.id} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">{event.name}</p>
+                        <p className="mt-1 text-sm text-slate-500">{event.clubName || "Student Life"}</p>
+                      </div>
+                      <EventStateBadge event={event} />
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-600">
+                      <div className="flex items-center gap-2">
+                        <Clock3 className="h-4 w-4 text-slate-400" />
+                        <span>{event.time || "Time not set"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-slate-400" />
+                        <span>{event.location || "Location not set"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Ticket className="h-4 w-4 text-slate-400" />
+                        <span>{event.registrationCount} registration{event.registrationCount === 1 ? "" : "s"}</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {event.roomConflictCount > 1 && <Badge className="rounded-full border-0 bg-red-100 text-red-700">Room conflict</Badge>}
+                      {event.overlapCount > 1 && <Badge className="rounded-full border-0 bg-sky-100 text-sky-700">Programming overlap</Badge>}
+                      {event.needsScheduling && <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Schedule incomplete</Badge>}
+                      {event.campusLabel && <Badge className="rounded-full border-0 bg-slate-100 text-slate-700">{event.campusLabel}</Badge>}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              <Button asChild variant="outline" className="w-full rounded-full border-slate-200 bg-white">
+                <Link to="/events">Open full event operations</Link>
+              </Button>
+            </TabsContent>
+
+            <TabsContent value="room-conflicts" className="mt-0 space-y-3">
+              <InspectorSectionHeading
+                eyebrow="Room conflicts"
+                title="Conflicts in view"
+                meta={`${roomConflicts.length} conflict${roomConflicts.length === 1 ? "" : "s"}`}
+              />
+              {loading ? (
+                Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
+              ) : roomConflicts.length === 0 ? (
+                <InspectorEmptyState message="No room conflicts in this view." />
+              ) : (
+                roomConflicts.map((item) => (
+                  <div key={item.key} className="rounded-[20px] border border-red-200 bg-red-50 px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">{item.location}</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {formatDateLabel(item.date)} • {item.time}
+                        </p>
+                      </div>
+                      <Badge className="rounded-full border-0 bg-red-100 text-red-700">{item.events.length} events</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {item.events.map((event) => (
+                        <Badge key={event.id} variant="outline" className="rounded-full border-red-200 bg-white text-red-700">
+                          {event.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="bottlenecks" className="mt-0 space-y-3">
+              <InspectorSectionHeading
+                eyebrow="Approvals"
+                title="Approval bottlenecks"
+                meta={`${bottlenecks.length} day${bottlenecks.length === 1 ? "" : "s"}`}
+              />
+              {loading ? (
+                Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
+              ) : bottlenecks.length === 0 ? (
+                <InspectorEmptyState message="No active approval bottlenecks in this period." />
+              ) : (
+                bottlenecks.map((item) => (
+                  <div key={item.date} className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">{formatDateLabel(item.date)}</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {item.events[0]?.name}
+                          {item.events.length > 1 ? ` + ${item.events.length - 1} more` : ""}
+                        </p>
+                      </div>
+                      <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">{item.count} waiting</Badge>
+                    </div>
+                  </div>
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="overlap" className="mt-0 space-y-3">
+              <InspectorSectionHeading
+                eyebrow="Overlap"
+                title="Programming overlap"
+                meta={`${overlaps.length} cluster${overlaps.length === 1 ? "" : "s"}`}
+              />
+              {loading ? (
+                Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
+              ) : overlaps.length === 0 ? (
+                <InspectorEmptyState message="No overlap pressure in this period." />
+              ) : (
+                overlaps.map((item) => (
+                  <div key={item.key} className="rounded-[20px] border border-sky-200 bg-sky-50 px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">{formatDateLabel(item.date)}</p>
+                        <p className="mt-1 text-sm text-slate-600">{item.campusLabel ? `${item.campusLabel} overlap` : "General same-day overlap"}</p>
+                      </div>
+                      <Badge className="rounded-full border-0 bg-sky-100 text-sky-700">{item.count} events</Badge>
+                    </div>
+                  </div>
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="queue" className="mt-0 space-y-3">
+              <InspectorSectionHeading
+                eyebrow="Queue"
+                title="Scheduling queue"
+                meta={`${unscheduledEvents.length} event${unscheduledEvents.length === 1 ? "" : "s"}`}
+              />
+              {loading ? (
+                Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
+              ) : unscheduledEvents.length === 0 ? (
+                <InspectorEmptyState message="Everything in the workspace has core schedule data." />
+              ) : (
+                unscheduledEvents.map((event) => (
+                  <div key={event.id} className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
+                    <p className="text-sm font-semibold text-slate-950">{event.name}</p>
+                    <p className="mt-1 text-sm text-slate-500">{event.clubName || "Student Life"}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {!event.date && <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Date missing</Badge>}
+                      {!event.time && <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Time missing</Badge>}
+                      {!event.location && <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Location missing</Badge>}
+                    </div>
+                  </div>
+                ))
+              )}
+            </TabsContent>
+          </div>
+        </CardContent>
+      </Card>
+    </Tabs>
   );
 }
 
-function BottleneckCard({ items, loading }: { items: ApprovalBottleneck[]; loading: boolean }) {
+function InspectorSectionHeading({
+  eyebrow,
+  title,
+  meta,
+}: {
+  eyebrow: string;
+  title: string;
+  meta: string;
+}) {
   return (
-    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader className="gap-2 pb-4">
-        <CardTitle className="text-xl tracking-tight">Approval bottlenecks</CardTitle>
-        <CardDescription>Dates carrying the most approval work in the current view.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2.5">
-        {loading ? (
-          Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
-        ) : items.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">No active approval bottlenecks in this period.</div>
-        ) : (
-          items.map((item) => (
-            <div key={item.date} className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{formatDateLabel(item.date)}</p>
-                  <p className="mt-1 text-sm text-slate-600">{item.events[0]?.name}{item.events.length > 1 ? ` + ${item.events.length - 1} more` : ""}</p>
-                </div>
-                <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">{item.count} waiting</Badge>
-              </div>
-            </div>
-          ))
-        )}
-      </CardContent>
-    </Card>
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{eyebrow}</p>
+        <h3 className="mt-1 text-base font-semibold tracking-tight text-slate-950">{title}</h3>
+      </div>
+      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{meta}</span>
+    </div>
   );
 }
 
-function OverlapCard({ items, loading }: { items: ProgrammingOverlap[]; loading: boolean }) {
+function InspectorEmptyState({ message }: { message: string }) {
   return (
-    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader className="gap-2 pb-4">
-        <CardTitle className="text-xl tracking-tight">Programming overlap</CardTitle>
-        <CardDescription>Heavy program clustering by day. Campus is estimated from location until dedicated campus fields land.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2.5">
-        {loading ? (
-          Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
-        ) : items.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">No overlap pressure in this period.</div>
-        ) : (
-          items.map((item) => (
-            <div key={item.key} className="rounded-[20px] border border-sky-200 bg-sky-50 px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{formatDateLabel(item.date)}</p>
-                  <p className="mt-1 text-sm text-slate-600">{item.campusLabel ? `${item.campusLabel} overlap` : "General same-day overlap"}</p>
-                </div>
-                <Badge className="rounded-full border-0 bg-sky-100 text-sky-700">{item.count} events</Badge>
-              </div>
-            </div>
-          ))
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function UnscheduledCard({ items, loading }: { items: CalendarViewEvent[]; loading: boolean }) {
-  return (
-    <Card className="overflow-hidden rounded-[28px] border-slate-200 shadow-sm">
-      <CardHeader className="gap-2 pb-4">
-        <CardTitle className="text-xl tracking-tight">Scheduling queue</CardTitle>
-        <CardDescription>Events still missing date, time, or location.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2.5">
-        {loading ? (
-          Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-[20px]" />)
-        ) : items.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">Everything in the workspace has core schedule data.</div>
-        ) : (
-          items.map((event) => (
-            <div key={event.id} className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-sm font-semibold text-slate-950">{event.name}</p>
-              <p className="mt-1 text-sm text-slate-500">{event.clubName || "Student Life"}</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {!event.date && <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Date missing</Badge>}
-                {!event.time && <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Time missing</Badge>}
-                {!event.location && <Badge className="rounded-full border-0 bg-amber-100 text-amber-800">Location missing</Badge>}
-              </div>
-            </div>
-          ))
-        )}
-      </CardContent>
-    </Card>
+    <div className="rounded-[20px] border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+      {message}
+    </div>
   );
 }
 
@@ -722,13 +869,13 @@ function KpiCard({
   loading: boolean;
 }) {
   return (
-    <div className="h-full rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-sm">
+    <div className="bg-white px-4 py-3">
       <div className="flex items-center justify-between gap-3 text-slate-500">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">{label}</p>
         <Icon className="h-4 w-4" />
       </div>
-      {loading ? <Skeleton className="mt-3 h-8 w-16" /> : <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>}
-      <p className="mt-2 text-sm leading-6 text-slate-500">{helper}</p>
+      {loading ? <Skeleton className="mt-3 h-7 w-14" /> : <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>}
+      <p className="mt-1.5 text-xs leading-5 text-slate-500">{helper}</p>
     </div>
   );
 }

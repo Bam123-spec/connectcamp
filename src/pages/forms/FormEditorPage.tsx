@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,13 +54,7 @@ export default function FormEditorPage() {
 
   const orgId = useMemo(() => resolveFormsOrgId(profile?.org_id), [profile?.org_id]);
 
-  useEffect(() => {
-    if (isEditMode && formId) {
-      fetchForm(formId);
-    }
-  }, [isEditMode, formId, orgId]);
-
-  const fetchForm = async (id: string) => {
+  const fetchForm = useCallback(async (id: string) => {
     try {
       setLoading(true);
 
@@ -91,17 +85,24 @@ export default function FormEditorPage() {
       setRedirectUrl(formData.redirect_url || "");
       setFields(fieldsData);
       setOriginalFieldIds(new Set(fieldsData.map((field) => field.id)));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unable to load this form right now.";
       toast({
         title: "Error loading form",
-        description: error.message || "Unable to load this form right now.",
+        description: message,
         variant: "destructive",
       });
       navigate("/forms");
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate, orgId, toast]);
+
+  useEffect(() => {
+    if (isEditMode && formId) {
+      void fetchForm(formId);
+    }
+  }, [fetchForm, formId, isEditMode]);
 
   const validateFieldConfig = () => {
     if (!title.trim()) {
@@ -135,7 +136,7 @@ export default function FormEditorPage() {
       if (OPTION_FIELD_TYPES.has(field.type)) {
         const options = (field.options ?? []).map((option) => option.trim()).filter(Boolean);
         if (options.length < 2) {
-          return `Field \"${field.label}\" needs at least two options.`;
+          return `Field "${field.label}" needs at least two options.`;
         }
       }
     }
@@ -203,10 +204,11 @@ export default function FormEditorPage() {
 
       navigate(`/forms/${savedForm.id}/edit`, { replace: true });
       setOriginalFieldIds(new Set(fields.map((field) => field.id)));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "An unexpected error occurred.";
       toast({
         title: "Error saving form",
-        description: error.message || "An unexpected error occurred.",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -216,7 +218,7 @@ export default function FormEditorPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );

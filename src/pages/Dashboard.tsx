@@ -26,6 +26,7 @@ import {
   Users,
 } from "lucide-react";
 import { formatNumber } from "@/lib/formatNumber";
+import { DashboardAI } from "@/components/dashboard/DashboardAI";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -287,6 +288,14 @@ export default function Dashboard() {
       <section>
         <RecentEventsTable events={recentEvents} loading={loading} />
       </section>
+
+      <DashboardAI
+        stats={stats}
+        trendData={trendData}
+        activeDaysData={activeDaysData}
+        recentEvents={recentEvents}
+        pendingItems={pendingItems}
+      />
     </div>
   );
 }

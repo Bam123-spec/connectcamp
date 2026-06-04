@@ -17,12 +17,14 @@ import Settings from "./pages/Settings";
 import Support from "./pages/Support";
 import Sidebar from "./components/layout/Sidebar";
 import Topbar from "./components/layout/Topbar";
+import Backdrop from "./components/layout/Backdrop";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { cn } from "@/lib/utils";
 import AddMembers from "./pages/AddMembers";
 import { Toaster } from "@/components/ui/toaster";
 import Analytics from "./pages/Analytics";
 import ScrollToTop from "./components/ScrollToTop";
+import { useAuth } from "./context/AuthContext";
 import FormsListPage from "./pages/forms/FormsListPage";
 import FormEditorPage from "./pages/forms/FormEditorPage";
 import FormResponsesPage from "./pages/forms/FormResponsesPage";
@@ -30,7 +32,6 @@ import PublicFormPage from "./pages/public/PublicFormPage";
 import UserManagement from "./pages/UserManagement";
 import PendingApprovals from "./pages/PendingApprovals";
 import AuditLog from "./pages/AuditLog";
-import { useAuth } from "./context/AuthContext";
 
 const SIDEBAR_COMPACT_STORAGE_KEY = "cc.sidebar.compact.default";
 
@@ -60,6 +61,8 @@ function AppLayout() {
   const isAuthenticatedAdmin = Boolean(session && profile?.role === "admin");
   const showAppChrome = !isLoginRoute && !isLandingRoute && !isPublicFormRoute && isAuthenticatedAdmin;
   const [sidebarOpen, setSidebarOpen] = useState(getInitialSidebarOpen);
+  const [sidebarHovered, setSidebarHovered] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     const applySidebarPreference = () => {
@@ -84,31 +87,46 @@ function AppLayout() {
   }, [showAppChrome, sidebarOpen]);
 
   return (
-    <div
-      className={cn(
-        "flex min-h-screen bg-muted/20",
-        !showAppChrome ? "flex-col" : "flex-col md:flex-row",
-      )}
-    >
+    <div className={cn("min-h-screen", showAppChrome ? "xl:flex" : "flex flex-col")}>
       {showAppChrome && (
         <Sidebar
+          key={location.pathname}
           open={sidebarOpen}
-          setOpen={setSidebarOpen}
-          className="fixed left-0 top-0 z-20 h-screen"
+          mobileOpen={mobileSidebarOpen}
+          hovered={sidebarHovered}
+          setHovered={setSidebarHovered}
+        />
+      )}
+      {showAppChrome && (
+        <Backdrop
+          isOpen={mobileSidebarOpen}
+          onClose={() => setMobileSidebarOpen(false)}
         />
       )}
 
       <div
         className={cn(
           "flex-1 transition-all duration-300 ease-in-out",
-          showAppChrome && (sidebarOpen ? "md:pl-64" : "md:pl-20"),
+          showAppChrome &&
+            (mobileSidebarOpen
+              ? "ml-0"
+              : sidebarOpen || sidebarHovered
+                ? "lg:ml-[290px]"
+                : "lg:ml-[90px]"),
         )}
       >
-        {showAppChrome && <Topbar />}
+        {showAppChrome && (
+          <Topbar
+            sidebarOpen={sidebarOpen}
+            setSidebarOpen={setSidebarOpen}
+            mobileOpen={mobileSidebarOpen}
+            setMobileOpen={setMobileSidebarOpen}
+          />
+        )}
         <main
           className={cn(
             "overflow-y-auto",
-            showAppChrome && "h-[calc(100vh-4rem)] px-4 pb-10 pt-4 sm:px-6 lg:px-8",
+            showAppChrome && "p-4 mx-auto max-w-screen-2xl md:p-6",
             isLoginRoute &&
               "flex min-h-screen items-center justify-center bg-background px-4",
             isPublicFormRoute && "min-h-screen",

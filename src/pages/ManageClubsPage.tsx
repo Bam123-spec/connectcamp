@@ -8,7 +8,8 @@ import {
     User,
     ArrowUpRight,
     Clock,
-    MapPin
+    MapPin,
+    type LucideIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,11 +82,13 @@ export default function ManageClubsPage() {
     }, []);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchClubs();
     }, [fetchClubs]);
 
     useEffect(() => {
         if (selectedClubId) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             fetchEvents(selectedClubId);
             // Update URL without reloading
             setSearchParams({ id: selectedClubId });
@@ -102,7 +105,7 @@ export default function ManageClubsPage() {
     );
 
     if (loading && clubs.length === 0) {
-        return <div className="p-8">Loading...</div>;
+        return <div className="flex min-h-[50vh] items-center justify-center">Loading...</div>;
     }
 
     if (!selectedClub) {
@@ -110,8 +113,7 @@ export default function ManageClubsPage() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50/50 p-8 font-sans text-slate-900">
-            <div className="mx-auto max-w-7xl space-y-8">
+        <div className="mx-auto max-w-7xl space-y-8 pb-10 font-sans text-slate-900">
 
                 {/* Header */}
                 <div className="flex flex-col gap-2">
@@ -314,12 +316,11 @@ export default function ManageClubsPage() {
                     </div>
 
                 </div>
-            </div>
         </div>
     );
 }
 
-function MetricCard({ icon: Icon, label, value, trend }: { icon: any, label: string, value: string | number, trend: string }) {
+function MetricCard({ icon: Icon, label, value, trend }: { icon: LucideIcon; label: string; value: string | number; trend: string }) {
     return (
         <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
             <div className="flex items-center gap-3">
