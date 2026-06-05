@@ -306,7 +306,7 @@ function AppLayout() {
             />
             <Route
               path="*"
-              element={<Navigate to={isAuthenticatedAdmin ? "/" : "/login"} replace />}
+              element={<Navigate to={isAuthenticatedAdmin ? "/dashboard" : "/login"} replace />}
             />
           </Routes>
         </main>

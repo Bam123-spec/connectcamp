@@ -1,4 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -69,6 +71,46 @@
   body {
     @apply bg-background text-foreground;
     font-family: "Outfit", sans-serif;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@layer components {
+  .landing-reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 700ms ease, transform 700ms ease;
+    will-change: opacity, transform;
+  }
+
+  .landing-reveal[data-visible="true"] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .landing-reveal {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+
+  @keyframes ready-marquee {
+    from {
+      transform: translateX(0);
+    }
+
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  .ready-marquee-track {
+    animation: ready-marquee 34s linear infinite;
   }
 }
 

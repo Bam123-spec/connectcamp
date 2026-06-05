@@ -1,236 +1,636 @@
-import { ArrowRight, CalendarDays, MessageSquare, ShieldCheck, Users } from "lucide-react";
-import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  ChevronLeft,
+  ChevronRight,
+  Facebook,
+  Linkedin,
+  MapPin,
+  Twitter,
+} from "lucide-react";
 
-const featureCards = [
+const utilityLinks = [
+  { label: "Are you a Student? Learn More", href: "#students" },
+  { label: "Looking for Client Support?", href: "#support" },
+];
+
+const navItems = [
+  { label: "Product", href: "#product" },
+  { label: "Solutions", href: "#solutions" },
+  { label: "Students", href: "#students" },
+  { label: "Schools", href: "#schools" },
+  { label: "Stories", href: "#stories" },
+  { label: "Resources", href: "#interactive-demo" },
+];
+
+const heroPhrases = [
+  "Support better outcomes",
+  "Make data-driven decisions",
+  "Drive engagement & retention",
+];
+
+const partnerLogos = [
+  { src: "/ready-assets/cornell.svg", alt: "Cornell" },
+  { src: "/ready-assets/seattle-university@2x.jpg", alt: "Seattle University" },
+  { src: "/ready-assets/embry-riddle@2x.jpg", alt: "Embry-Riddle" },
+  { src: "/ready-assets/sjsu-university@2x.jpg", alt: "SJSU" },
+  { src: "/ready-assets/lamar-university.svg", alt: "Lamar University" },
+  { src: "/ready-assets/spelman-college@2x.jpg", alt: "Spelman College" },
+  { src: "/ready-assets/uhcl.svg", alt: "UHCL" },
+  { src: "/ready-assets/st-lawrence-college.svg", alt: "St. Lawrence College" },
+  { src: "/ready-assets/insitution-logos_bu-law.svg", alt: "Boston University School of Law" },
+  { src: "/ready-assets/portland-community-college-logo-v2.svg", alt: "Portland Community College" },
+  { src: "/ready-assets/smith-college-x2@2x.png", alt: "Smith College" },
+  { src: "/ready-assets/university-of-wisconsin-eau-claire.svg", alt: "University of Wisconsin Eau-Claire" },
+];
+
+const stats = [
+  { label: "Student Clubs", value: "87", suffix: "K+" },
+  { label: "Event Registrations", value: "9", suffix: "M+" },
+  { label: "Targeted Emails Delivered", value: "154", suffix: "M+" },
+];
+
+const testimonials = [
   {
-    icon: Users,
-    title: "Organize clubs clearly",
-    description:
-      "Keep club records, officers, and onboarding work in one clean workspace.",
+    headline: "By creating a unified platform, we leveled the playing field for all students.",
+    quote:
+      "Prior to implementing CampusCord, our online community felt disconnected from the on-campus experience. By creating a unified platform, we leveled the playing field for all students. Events and community channels have become top engagement drivers, providing a central virtual town square that strengthens retention.",
+    name: "Matt Weitzel",
+    role: "IT Project Manager",
+    location: "Rocky Mountain College of Art + Design",
   },
   {
-    icon: CalendarDays,
-    title: "Run events with less friction",
-    description:
-      "Track schedules, approvals, and follow-up details without bouncing between tools.",
+    headline: "We saw a major lift in group participation and event promotion.",
+    quote:
+      "The platform's suite of engagement solutions made the student experience easier to manage and easier to measure. In a short period, we saw stronger participation, more event visibility, and better reporting for the teams responsible for engagement.",
+    name: "Calvin L. Smith, Jr",
+    role: "Former Senior Director of Student Leadership and Involvement",
+    location: "Johns Hopkins University",
+  },
+];
+
+const footerColumns = [
+  {
+    title: "Product",
+    links: [
+      { label: "Campus engagement", href: "#product" },
+      { label: "Student experience", href: "#students" },
+      { label: "Support and success", href: "#support" },
+    ],
   },
   {
-    icon: MessageSquare,
-    title: "Stay connected with officers",
-    description:
-      "Use one shared messaging layer for club threads, admin conversations, and support.",
+    title: "Solutions",
+    links: [
+      { label: "Student engagement", href: "#solutions" },
+      { label: "Academic success", href: "#schools" },
+      { label: "Community and belonging", href: "#solutions" },
+      { label: "Communications", href: "#solutions" },
+    ],
+  },
+  {
+    title: "Resources",
+    links: [
+      { label: "Success stories", href: "#stories" },
+      { label: "Guides", href: "#interactive-demo" },
+      { label: "Articles", href: "#interactive-demo" },
+      { label: "Webinars", href: "#interactive-demo" },
+    ],
+  },
+  {
+    title: "Support",
+    links: [
+      { label: "Client support", href: "#support" },
+      { label: "Implementation", href: "#support" },
+      { label: "Privacy", href: "#support" },
+      { label: "Legal notice", href: "#support" },
+    ],
   },
 ];
 
 function Landing() {
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [testimonialIndex, setTestimonialIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setHeroIndex((current) => (current + 1) % heroPhrases.length);
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const currentTestimonial = testimonials[testimonialIndex];
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_48%,#eef5ff_100%)] text-slate-950">
-      <header className="border-b border-slate-200/80 bg-white/88 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link to="/" className="flex min-w-0 items-center gap-3">
-            <ConnectCampWordmark />
-          </Link>
+    <div
+      className="min-h-screen bg-white text-[#0B0F19]"
+      style={{ fontFamily: "Figtree, sans-serif" }}
+    >
+      <header className="sticky top-0 z-40 border-b border-[#0B0F19]/8 bg-white/96 backdrop-blur-xl">
+        <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-2 py-3 text-[11px] font-medium text-[#0B0F19]/58 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {utilityLinks.map((item) => (
+                <a key={item.label} href={item.href} className="transition-colors hover:text-[#0B0F19]">
+                  {item.label}
+                </a>
+              ))}
+            </div>
+            <span className="hidden sm:inline">
+              Student engagement platform for campus life, communications, and belonging.
+            </span>
+          </div>
+        </div>
 
-          <nav className="hidden items-center gap-8 text-sm text-slate-600 md:flex">
-            <a href="#features" className="transition-colors hover:text-slate-950">
-              Features
-            </a>
-            <a href="#workflow" className="transition-colors hover:text-slate-950">
-              Workflow
-            </a>
-            <a href="#support" className="transition-colors hover:text-slate-950">
-              Support
-            </a>
-          </nav>
+        <div className="border-t border-[#0B0F19]/8 bg-white">
+          <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-6 px-4 py-4 sm:px-6 lg:px-8">
+            <BrandLogo />
 
-          <Button asChild className="rounded-full bg-slate-950 px-5 text-white hover:bg-slate-800">
-            <Link to="/login">Log in</Link>
-          </Button>
+            <nav className="hidden items-center gap-1 text-sm font-medium text-[#0B0F19]/70 lg:flex">
+              {navItems.map((item) => (
+                <a
+                  key={item.label}
+                  href={item.href}
+                  className="rounded-full px-3 py-2 transition-colors hover:bg-[#F5F7FA] hover:text-[#0B0F19]"
+                >
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+
+            <a
+              href="#support"
+              className="inline-flex items-center gap-2 rounded-full border border-[#0B0F19]/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#0B0F19] transition-colors hover:bg-[#F5F7FA]"
+            >
+              Let&apos;s Talk
+              <ArrowRight className="h-4 w-4" />
+            </a>
+          </div>
         </div>
       </header>
 
       <main>
-        <section className="px-4 pb-20 pt-16 sm:px-6 lg:px-8 lg:pb-24 lg:pt-20">
-          <div className="mx-auto grid w-full max-w-6xl gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,420px)] lg:items-center">
+        <section className="border-b border-[#0B0F19]/8 bg-white py-14 lg:py-16">
+          <div className="mx-auto grid w-full max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:px-8">
             <div className="max-w-3xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[#5a6fd8]">
-                Student Life Operations
-              </p>
-              <h1 className="mt-5 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
-                One place to manage clubs, events, and campus coordination.
-              </h1>
-              <p className="mt-6 max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
-                Connect Camp gives campus teams a straightforward way to handle club operations,
-                messaging, approvals, forms, and support without a messy admin workflow.
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0B0F19]/52">
+                Ready to level up your student experience?
               </p>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Button asChild className="rounded-full bg-slate-950 px-6 text-white hover:bg-slate-800">
-                  <Link to="/login">
-                    Open admin login
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
+              <div className="mt-4 flex items-start gap-3">
+                <div className="min-w-0">
+                  <h1 className="text-5xl font-semibold tracking-[-0.05em] text-[#0B0F19] sm:text-6xl lg:text-[4.7rem] lg:leading-[0.95]">
+                    {heroPhrases[heroIndex]}
+                  </h1>
+                </div>
+                <img
+                  src="/ready-assets/large-arrow-right.svg"
+                  alt=""
+                  className="mt-2 hidden h-8 w-8 shrink-0 lg:block"
+                />
+              </div>
+
+              <p className="mt-6 max-w-2xl text-lg leading-8 text-[#0B0F19]/72 sm:text-xl">
+                The unified engagement and success hub that helps students navigate college with confidence.
+              </p>
+
+              <div className="mt-8 flex flex-wrap gap-3">
                 <a
-                  href="#features"
-                  className="inline-flex items-center rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950"
+                  href="#interactive-demo"
+                  className="inline-flex items-center gap-2 rounded-full bg-[#2563EB] px-5 py-3 text-sm font-bold text-white shadow-[0_14px_30px_rgba(37,99,235,0.18)] transition-transform hover:-translate-y-0.5 hover:bg-[#1D4ED8]"
                 >
-                  Explore features
+                  Explore CampusCord
+                  <img src="/ready-assets/large-arrow-right.svg" alt="" className="h-4 w-4" />
+                </a>
+                <a
+                  href="#support"
+                  className="inline-flex items-center gap-2 rounded-full border border-[#0B0F19]/10 bg-white px-5 py-3 text-sm font-medium text-[#0B0F19] transition-colors hover:bg-[#F5F7FA]"
+                >
+                  Let&apos;s Talk
+                  <img src="/ready-assets/large-arrow-right.svg" alt="" className="h-4 w-4" />
                 </a>
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <StatCard value="Clubs" label="Club oversight" helper="Track active organizations, officer coverage, and onboarding." />
-                <StatCard value="Events" label="Event operations" helper="Keep schedules, approvals, and event details aligned." />
-                <StatCard value="Messages" label="Shared inbox" helper="Coordinate with officers and admins in one messaging space." />
-                <StatCard value="Support" label="Admin help" helper="Surface issues, requests, and documentation in the same platform." />
+            <div className="relative">
+              <div className="overflow-hidden border border-[#0B0F19]/10 bg-[#F5F7FA] shadow-[0_24px_60px_rgba(11,15,25,0.08)]">
+                <img
+                  src="/ready-assets/ready-campus-overview.webp"
+                  alt="CampusCord product preview"
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="absolute -bottom-5 left-5 right-5 hidden rounded-[20px] border border-[#0B0F19]/10 bg-white px-5 py-4 shadow-[0_12px_30px_rgba(11,15,25,0.08)] lg:block">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0B0F19]/48">
+                  Campus life, finally connected.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[#0B0F19]/70">
+                  Events, clubs, communications, and student support in one cleaner experience.
+                </p>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="features" className="px-4 py-16 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-6xl">
-            <div className="max-w-2xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Core Features
-              </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-                A normal, usable admin workspace.
-              </h2>
-              <p className="mt-3 text-base leading-7 text-slate-600">
-                Connect Camp is built for the everyday work behind student organizations, not just a flashy dashboard.
-              </p>
+        <section className="border-b border-[#0B0F19]/8 bg-[#F5F7FA] py-8">
+          <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="overflow-hidden border-y border-[#0B0F19]/10 bg-white py-5">
+              <div className="ready-marquee-track flex w-max items-center gap-10">
+                {[...partnerLogos, ...partnerLogos].map((logo, index) => (
+                  <img
+                    key={`${logo.alt}-${index}`}
+                    src={logo.src}
+                    alt={logo.alt}
+                    className="h-9 w-auto max-w-[160px] shrink-0 object-contain opacity-80 grayscale"
+                  />
+                ))}
+              </div>
             </div>
+          </div>
+        </section>
 
-            <div className="mt-8 grid gap-5 lg:grid-cols-3">
-              {featureCards.map(({ icon: Icon, title, description }) => (
+        <section className="border-b border-[#0B0F19]/8 bg-white py-14 lg:py-18">
+          <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+            <h2 className="text-center text-2xl font-medium tracking-[-0.03em] text-[#0B0F19] lg:text-3xl">
+              Driving success for more than 7 million students since 2005
+            </h2>
+
+            <div className="mt-10 grid gap-0 border-y border-[#0B0F19]/10 bg-white md:grid-cols-3">
+              {stats.map((stat, index) => (
                 <div
-                  key={title}
-                  className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm"
+                  key={stat.label}
+                  className={`px-6 py-6 ${index > 0 ? "border-t border-[#0B0F19]/10 md:border-t-0 md:border-l" : ""} border-[#0B0F19]/10`}
                 >
-                  <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,#e7f0ff_0%,#efeaff_100%)] text-[#5a6fd8]">
-                    <Icon className="h-5 w-5" />
+                  <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[#0B0F19]/48">
+                    {stat.label}
+                  </p>
+                  <div className="mt-3 flex items-end gap-1">
+                    <span className="text-4xl font-semibold tracking-[-0.05em] text-[#0B0F19] lg:text-5xl">
+                      {stat.value}
+                    </span>
+                    <span className="pb-1 text-2xl font-semibold tracking-[-0.04em] text-[#0B0F19]">
+                      {stat.suffix}
+                    </span>
                   </div>
-                  <h3 className="mt-5 text-xl font-semibold text-slate-950">{title}</h3>
-                  <p className="mt-3 text-sm leading-7 text-slate-600">{description}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        <section id="workflow" className="px-4 pb-16 sm:px-6 lg:px-8">
-          <div className="mx-auto grid w-full max-w-6xl gap-6 rounded-[32px] border border-slate-200 bg-white p-8 shadow-[0_18px_50px_rgba(15,23,42,0.05)] lg:grid-cols-[1fr_1.2fr]">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Workflow
-              </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-                Built for the actual work behind campus programs.
-              </h2>
-            </div>
+        <section className="border-b border-[#0B0F19]/8 bg-white py-14 lg:py-20">
+          <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0B0F19]/52">
+                  Solutions
+                </p>
+                <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-[#0B0F19] lg:text-4xl">
+                  Engagement. Belonging. Success. All in one place.
+                </h2>
+                <p className="mt-4 max-w-xl text-base leading-8 text-[#0B0F19]/70">
+                  The CampusCord platform is a unified student engagement and success hub that brings campus life, academics, and student services together into one personalized experience.
+                </p>
+                <p className="mt-4 max-w-xl text-base leading-8 text-[#0B0F19]/70">
+                  CampusCord helps institutions drive measurable engagement and belonging, improve student satisfaction and retention, and streamline processes so staff can focus on students. It gives every student a modern, frictionless way to navigate college life while enabling IT to consolidate systems into a single, secure engagement platform.
+                </p>
+                <a
+                  href="#interactive-demo"
+                  className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[#2563EB] transition-colors hover:text-[#1D4ED8]"
+                >
+                  Explore Student Engagement
+                  <img src="/ready-assets/large-arrow-right.svg" alt="" className="h-4 w-4" />
+                </a>
+              </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
-              <WorkflowStep
-                step="01"
-                title="Review"
-                description="See what needs approval, follow-up, or scheduling without digging through disconnected tools."
-              />
-              <WorkflowStep
-                step="02"
-                title="Coordinate"
-                description="Message clubs, manage staff handoffs, and keep support requests moving."
-              />
-              <WorkflowStep
-                step="03"
-                title="Track"
-                description="Use analytics, audit history, and settings controls to keep the workspace reliable."
-              />
+              <div className="overflow-hidden border border-[#0B0F19]/10 bg-white shadow-[0_18px_40px_rgba(11,15,25,0.04)]">
+                <img
+                  src="/ready-assets/ready-campus-overview.webp"
+                  alt="CampusCord overview"
+                  className="block h-auto w-full"
+                />
+              </div>
             </div>
           </div>
         </section>
 
-        <section id="support" className="px-4 pb-20 sm:px-6 lg:px-8">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 rounded-[28px] bg-slate-950 px-8 py-10 text-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-2xl">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-[18px] bg-white/10">
-                <ShieldCheck className="h-5 w-5 text-white" />
-              </div>
-              <h2 className="text-3xl font-semibold tracking-tight">Ready to get into the admin workspace?</h2>
-              <p className="mt-3 text-sm leading-7 text-slate-300">
-                Sign in to manage the Connect Camp workspace, review activity, and keep club operations moving.
+        <SideBySideSection
+          eyebrow="Solutions"
+          title="Drive student engagement and retention"
+          description="Increase students’ sense of community and belonging by connecting them to the right people, programs, and resources through one personalized web and mobile platform."
+          body="Help more students stay, graduate, and launch their careers by giving them clear pathways through each stage of their journey, timely access to the support and services they need, and meaningful engagement in student life and campus experiences."
+          image="/ready-assets/na-strengthen-student-engagement-0.webp"
+          imageAlt="Student engagement illustration"
+          reverse
+          buttonLabel="Learn More"
+          buttonHref="#interactive-demo"
+        />
+
+        <SideBySideSection
+          eyebrow="Solutions"
+          title="Give every student a modern, frictionless way to navigate college life with success"
+          description="Deliver a simple, unified experience where students can easily see what is coming next, manage tasks and deadlines, and know where to go for help."
+          body="Provide a single secure and accessible platform for engagement across the entire student experience, from classes to co-curricular activities to events. CampusCord integrates with existing systems like the SIS and LMS, consolidating multiple point solutions into fewer systems with less complexity and vendor management."
+          image="/ready-assets/na-support-student-and-academic-success-0.webp"
+          imageAlt="Student academic success illustration"
+        />
+
+        <SideBySideSection
+          eyebrow="Solutions"
+          title="Make better decisions to drive engagement and retention"
+          description="Help administrators across the campus incorporate engagement data into decision-making."
+          body="Use analytics to understand how student engagement is changing over time so you can quickly see what is working, where to intervene, and which experiences have the greatest impact on satisfaction and persistence. Connect engagement data to your broader analytics stack and give campus teams flexible, self-service reporting so they can focus efforts where they have the most impact and clearly demonstrate the effect on retention and ROI."
+          image="/ready-assets/na-optimize-operations-5.webp"
+          imageAlt="Data and operations illustration"
+          reverse
+          buttonLabel="Learn More"
+          buttonHref="#interactive-demo"
+        />
+
+        <SideBySideSection
+          eyebrow="Support"
+          title="Relax!"
+          description="Receive expert implementation and ongoing support from CampusCord. Launch quickly with guidance from implementation and campus success specialists who align setup and rollout with your goals."
+          body="Support your team’s success with ongoing training, a vibrant user community, and responsive help so you can stay focused on supporting students instead of managing technology."
+          image="/ready-assets/na-foster-community-and-belonging-0.webp"
+          imageAlt="Community and belonging illustration"
+          buttonLabel="Read the St. Lawrence College Success Story"
+          buttonHref="#stories"
+        />
+
+        <section id="interactive-demo" className="border-b border-[#0B0F19]/8 bg-white py-14 lg:py-20">
+          <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="text-center">
+              <h2 className="text-3xl font-semibold tracking-[-0.04em] text-[#0B0F19] lg:text-4xl">
+                Explore CampusCord
+              </h2>
+              <p className="mx-auto mt-4 max-w-2xl text-base leading-8 text-[#0B0F19]/70">
+                Get an inside look at what makes CampusCord the hub of campus involvement.
               </p>
             </div>
 
-            <Button asChild className="rounded-full bg-white px-6 text-slate-950 hover:bg-slate-100">
-              <Link to="/login">Go to login</Link>
-            </Button>
+            <div className="mt-10 mx-auto max-w-5xl">
+              <div className="overflow-hidden border border-[#0B0F19]/10 bg-[#F5F7FA] shadow-[0_20px_48px_rgba(11,15,25,0.08)]">
+                <img
+                  src="/ready-assets/ready-campus-overview.webp"
+                  alt="CampusCord overview preview"
+                  className="block h-auto w-full"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="stories" className="border-b border-[#0B0F19]/8 bg-[#F5F7FA] py-14 lg:py-20">
+          <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr]">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0B0F19]/52">
+                  Testimonials
+                </p>
+                <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-[#0B0F19] lg:text-4xl">
+                  What campus leaders are saying
+                </h2>
+                <p className="mt-4 text-base leading-8 text-[#0B0F19]/70">
+                  The tone should feel like the platform is already part of daily campus life.
+                </p>
+
+                <div className="mt-8 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTestimonialIndex((current) => (current - 1 + testimonials.length) % testimonials.length)
+                    }
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#0B0F19]/10 bg-white text-[#0B0F19] transition-colors hover:bg-[#F5F7FA]"
+                    aria-label="Previous testimonial"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTestimonialIndex((current) => (current + 1) % testimonials.length)
+                    }
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#0B0F19]/10 bg-white text-[#0B0F19] transition-colors hover:bg-[#F5F7FA]"
+                    aria-label="Next testimonial"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-6 flex items-center gap-2">
+                  {testimonials.map((_, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => setTestimonialIndex(index)}
+                      className={`h-2.5 rounded-full transition-all ${
+                        index === testimonialIndex ? "w-8 bg-[#2563EB]" : "w-2.5 bg-[#0B0F19]/18"
+                      }`}
+                      aria-label={`Show testimonial ${index + 1}`}
+                      aria-pressed={index === testimonialIndex}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="border border-[#0B0F19]/10 bg-white p-6 shadow-[0_20px_48px_rgba(11,15,25,0.06)] lg:p-8">
+                <p className="text-2xl font-semibold tracking-[-0.04em] text-[#0B0F19]">
+                  “{currentTestimonial.headline}”
+                </p>
+                <p className="mt-5 text-base leading-8 text-[#0B0F19]/74">
+                  “{currentTestimonial.quote}”
+                </p>
+
+                <div className="mt-8 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[#0B0F19]">{currentTestimonial.name}</p>
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#0B0F19]/52">
+                      {currentTestimonial.role}
+                    </p>
+                    <p className="mt-1 text-sm text-[#0B0F19]/60">{currentTestimonial.location}</p>
+                  </div>
+                  <BadgeCheck className="h-5 w-5 shrink-0 text-[#2563EB]" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="support" className="border-b border-[#0B0F19]/8 bg-white py-14 lg:py-20">
+          <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid gap-10 lg:grid-cols-[1fr_1.05fr]">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0B0F19]/52">
+                  Get started today!
+                </p>
+                <h2 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-[#0B0F19] lg:text-4xl">
+                  Experience the future of campus engagement
+                </h2>
+                <p className="mt-4 max-w-xl text-base leading-8 text-[#0B0F19]/70">
+                  Let&apos;s start discussing ways your institution can improve communications and experiences to increase retention and drive student success.
+                </p>
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <a
+                    href="mailto:hello@campuscord.com"
+                    className="inline-flex items-center gap-2 rounded-full bg-[#2563EB] px-5 py-3 text-sm font-bold text-white shadow-[0_14px_30px_rgba(37,99,235,0.18)] transition-transform hover:-translate-y-0.5 hover:bg-[#1D4ED8]"
+                  >
+                    Get in Touch
+                    <img src="/ready-assets/large-arrow-right.svg" alt="" className="h-4 w-4" />
+                  </a>
+                  <a
+                    href="tel:18775887508"
+                    className="inline-flex items-center gap-2 rounded-full border border-[#0B0F19]/10 px-5 py-3 text-sm font-medium text-[#0B0F19] transition-colors hover:bg-[#F5F7FA]"
+                  >
+                    +1 (877) 588-7508
+                    <img src="/ready-assets/large-arrow-right.svg" alt="" className="h-4 w-4" />
+                  </a>
+                </div>
+              </div>
+
+              <div className="grid gap-0 border-t border-[#0B0F19]/10 sm:grid-cols-2">
+                <div className="border-b border-[#0B0F19]/10 p-6 sm:border-r">
+                  <div className="flex items-start gap-3">
+                    <MapPin className="mt-1 h-5 w-5 shrink-0 text-[#2563EB]" />
+                    <p className="text-sm leading-7 text-[#0B0F19]/70">
+                      100 Summit Drive
+                      <br />
+                      Burlington, MA 01803, USA
+                    </p>
+                  </div>
+                </div>
+
+                {footerColumns.map((column, index) => (
+                  <div
+                    key={column.title}
+                    className={`border-b border-[#0B0F19]/10 p-6 ${
+                      index % 2 === 0 ? "sm:border-r" : ""
+                    }`}
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0B0F19]/48">
+                      {column.title}
+                    </p>
+                    <ul className="mt-4 space-y-3 text-sm text-[#0B0F19]/68">
+                      {column.links.map((link) => (
+                        <li key={link.label}>
+                          <a
+                            href={link.href}
+                            className="transition-colors hover:text-[#0B0F19]"
+                          >
+                            {link.label}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
       </main>
+
+      <footer className="bg-white py-7">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <p className="text-sm text-[#0B0F19]/60">© 2026 CampusCord. All rights reserved.</p>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://www.facebook.com"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#0B0F19]/10 text-[#0B0F19]/72 transition-colors hover:bg-[#F5F7FA]"
+              aria-label="Facebook"
+            >
+              <Facebook className="h-4 w-4" />
+            </a>
+            <a
+              href="https://x.com"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#0B0F19]/10 text-[#0B0F19]/72 transition-colors hover:bg-[#F5F7FA]"
+              aria-label="X"
+            >
+              <Twitter className="h-4 w-4" />
+            </a>
+            <a
+              href="https://www.linkedin.com"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#0B0F19]/10 text-[#0B0F19]/72 transition-colors hover:bg-[#F5F7FA]"
+              aria-label="LinkedIn"
+            >
+              <Linkedin className="h-4 w-4" />
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
 
-function StatCard({
-  value,
-  label,
-  helper,
-}: {
-  value: string;
-  label: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{value}</p>
-      <p className="mt-2 text-lg font-semibold text-slate-950">{label}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{helper}</p>
-    </div>
-  );
-}
-
-function WorkflowStep({
-  step,
+function SideBySideSection({
+  eyebrow,
   title,
   description,
+  body,
+  image,
+  imageAlt,
+  reverse = false,
+  buttonLabel,
+  buttonHref = "#support",
 }: {
-  step: string;
+  eyebrow: string;
   title: string;
   description: string;
+  body: string;
+  image: string;
+  imageAlt: string;
+  reverse?: boolean;
+  buttonLabel?: string;
+  buttonHref?: string;
 }) {
   return (
-    <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#5a6fd8]">{step}</p>
-      <p className="mt-3 text-lg font-semibold text-slate-950">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
-    </div>
+    <section className={`border-b border-[#0B0F19]/8 py-14 lg:py-20 ${reverse ? "bg-[#F5F7FA]" : "bg-white"}`}>
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:items-center">
+          <div className={reverse ? "lg:order-2" : ""}>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0B0F19]/52">
+              {eyebrow}
+            </p>
+            <h3 className="mt-4 text-3xl font-semibold tracking-[-0.04em] text-[#0B0F19] lg:text-4xl">
+              {title}
+            </h3>
+            <p className="mt-4 max-w-xl text-base leading-8 text-[#0B0F19]/70">
+              {description}
+            </p>
+            <p className="mt-4 max-w-xl text-base leading-8 text-[#0B0F19]/70">
+              {body}
+            </p>
+            {buttonLabel ? (
+              <a
+                href={buttonHref}
+                className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[#2563EB] transition-colors hover:text-[#1D4ED8]"
+              >
+                {buttonLabel}
+                <img src="/ready-assets/large-arrow-right.svg" alt="" className="h-4 w-4" />
+              </a>
+            ) : null}
+          </div>
+
+          <div className={reverse ? "lg:order-1 lg:justify-self-start" : "lg:justify-self-end"}>
+            <div className="overflow-hidden border border-[#0B0F19]/10 bg-white shadow-[0_18px_40px_rgba(11,15,25,0.04)]">
+              <img src={image} alt={imageAlt} className="block h-auto w-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
-function ConnectCampWordmark() {
+function BrandLogo({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <div className="grid h-11 w-11 shrink-0 place-content-center rounded-[18px] bg-[linear-gradient(145deg,#2aa8f7_0%,#4b86ff_55%,#7350ef_100%)] text-white shadow-[0_10px_24px_rgba(90,111,216,0.25)]">
-        <svg viewBox="0 0 128 128" className="h-6 w-6" aria-hidden="true" focusable="false">
-          <rect width="128" height="128" rx="24" fill="currentColor" />
-          <path
-            fill="#ffffff"
-            d="M64 18c-25.4 0-46 20.6-46 46s20.6 46 46 46c11.2 0 21.8-4 30.1-11.4l-14-16.8A23 23 0 0 1 64 85c-13 0-23.6-10.6-23.6-23.7S51 37.5 64 37.5c7.7 0 14.7 3.7 19.2 9.6l13.9-16.7C88.7 22 76.8 18 64 18Z"
-          />
-          <circle cx="64" cy="61.3" r="11" fill="#4b66f2" />
-        </svg>
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-xl font-medium tracking-tight text-[#6e56cf] sm:text-2xl">
-          Connect Camp
-        </p>
-      </div>
-    </div>
+    <img
+      src="/images/logo/campus-cord-logo.png"
+      alt="CampusCord"
+      className={compact ? "h-9 w-auto" : "h-10 w-auto sm:h-11"}
+      draggable={false}
+    />
   );
 }
 
