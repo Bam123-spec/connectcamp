@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
+import BrandLogo from "@/components/layout/BrandLogo";
 import NotificationDropdown from "@/components/header/NotificationDropdown";
 import UserDropdown from "@/components/header/UserDropdown";
 
@@ -88,6 +89,10 @@ export default function Topbar({
               </svg>
             )}
           </button>
+
+          <div className="flex flex-1 items-center justify-center lg:hidden">
+            <BrandLogo />
+          </div>
 
           <button
             onClick={toggleApplicationMenu}
