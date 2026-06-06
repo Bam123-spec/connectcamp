@@ -238,8 +238,14 @@ export default function Sidebar({
       onMouseEnter={() => !open && setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className={`py-8 flex ${!open && !hovered ? "lg:justify-center" : "justify-start"}`}>
-        <BrandLogo compact={!open && !hovered && !mobileOpen} />
+      <div
+        className={cn(
+          "flex",
+          mobileOpen ? "py-6" : "py-8",
+          !open && !hovered ? "lg:justify-center" : "justify-start",
+        )}
+      >
+        {!mobileOpen && <BrandLogo compact={!open && !hovered} />}
       </div>
       <div className="flex flex-1 flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
         <nav className="mb-6 flex-1">
