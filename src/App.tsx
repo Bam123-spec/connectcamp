@@ -127,8 +127,7 @@ function AppLayout() {
           className={cn(
             "overflow-y-auto",
             showAppChrome && "p-4 mx-auto max-w-screen-2xl md:p-6",
-            isLoginRoute &&
-              "flex min-h-screen items-center justify-center bg-background px-4",
+            isLoginRoute && "min-h-screen bg-white",
             isPublicFormRoute && "min-h-screen",
           )}
         >
