@@ -241,11 +241,11 @@ export default function Sidebar({
       <div
         className={cn(
           "flex",
-          mobileOpen ? "py-6" : "py-8",
+          mobileOpen ? "py-4" : "py-8",
           !open && !hovered ? "lg:justify-center" : "justify-start",
         )}
       >
-        <BrandLogo compact={isCompactDesktopSidebar && !mobileOpen} />
+        {!mobileOpen && <BrandLogo compact={isCompactDesktopSidebar} />}
       </div>
       <div className="flex flex-1 flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
         <nav className="mb-4 flex-1">
