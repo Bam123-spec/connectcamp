@@ -91,7 +91,7 @@ export default function Topbar({
           </button>
 
           <div className="flex flex-1 items-center justify-center lg:hidden">
-            <BrandLogo />
+            <BrandLogo className="scale-90 origin-center" />
           </div>
 
           <button
