@@ -65,7 +65,7 @@ function SidebarSectionLabel({
   return (
     <h2
       className={cn(
-        "mb-4 text-xs uppercase flex leading-[20px] text-gray-400",
+        "mb-3 flex text-xs uppercase leading-[20px] text-gray-400",
         compact ? "lg:justify-center" : "justify-start",
       )}
     >
@@ -83,7 +83,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const location = useLocation();
   const pathname = location.pathname;
-  const compact = !open && !hovered;
+  const isCompactDesktopSidebar = !open && !hovered;
 
   const [openSubmenu, setOpenSubmenu] = useState<OpenSubmenu>(() =>
     getInitialOpenSubmenu(pathname),
@@ -119,7 +119,7 @@ export default function Sidebar({
   };
 
   const renderMenuItems = (items: SidebarItem[], menuType: "main" | "others") => (
-    <ul className="flex flex-col gap-4">
+    <ul className="flex flex-col gap-3">
       {items.map((nav, index) => (
         <li key={nav.label}>
           {nav.subItems ? (
@@ -245,22 +245,28 @@ export default function Sidebar({
           !open && !hovered ? "lg:justify-center" : "justify-start",
         )}
       >
-        {!mobileOpen && <BrandLogo compact={!open && !hovered} />}
+        <BrandLogo compact={isCompactDesktopSidebar && !mobileOpen} />
       </div>
       <div className="flex flex-1 flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
-        <nav className="mb-6 flex-1">
-          <div className="flex flex-col gap-4">
+        <nav className="mb-4 flex-1">
+          <div className="flex flex-col gap-3">
             <div>
-              <SidebarSectionLabel section={sidebarSections[0]} compact={compact} />
+              <SidebarSectionLabel
+                section={sidebarSections[0]}
+                compact={isCompactDesktopSidebar && !mobileOpen}
+              />
               {renderMenuItems(sidebarSections[0].items, "main")}
             </div>
             <div>
-              <SidebarSectionLabel section={sidebarSections[1]} compact={compact} />
+              <SidebarSectionLabel
+                section={sidebarSections[1]}
+                compact={isCompactDesktopSidebar && !mobileOpen}
+              />
               {renderMenuItems(sidebarSections[1].items, "others")}
             </div>
           </div>
         </nav>
-        <SidebarWidget compact={compact} />
+        <SidebarWidget compact={isCompactDesktopSidebar || mobileOpen} />
       </div>
     </aside>
   );
